@@ -36,6 +36,17 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, p
     expect(Math.max(...pack.rods.map((r) => r.castLevels))).toBeGreaterThanOrEqual(deepest)
   })
 
+  it('отметки фоновой картинки идут от берега к горизонту и покрывают все места ловли', () => {
+    for (const { name, zones, backdrop } of pack.waters) {
+      if (!backdrop) continue
+      expect(backdrop.zoneEdges, name).toHaveLength(zones.length + 1)
+      const marks = [backdrop.shore, ...backdrop.zoneEdges, backdrop.waterline]
+      for (let i = 1; i < marks.length; i++) expect(marks[i], `${name}: отметка ${i}`).toBeLessThan(marks[i - 1])
+      expect(backdrop.waterline).toBeGreaterThan(0)
+      expect(backdrop.shore).toBeLessThan(1)
+    }
+  })
+
   it('дальний заброс ничего не отнимает и добавляет новую рыбу', () => {
     for (const water of pack.waters) {
       for (let i = 1; i < water.zones.length; i++) {

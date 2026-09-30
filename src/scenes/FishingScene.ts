@@ -40,6 +40,8 @@ type Result = { kind: 'caught'; fish: HookedFish; price: number } | { kind: 'esc
 export class FishingScene extends Phaser.Scene {
   private session!: FishingSession
   private gfx!: Phaser.GameObjects.Graphics
+  /** Фоновая картинка водоёма; у водоёма без картинки — скрыта, вместо неё заливка из палитры. */
+  private bg!: Phaser.GameObjects.Image
   private statusText!: Phaser.GameObjects.Text
   private walletText!: Phaser.GameObjects.Text
   private fightText!: Phaser.GameObjects.Text
@@ -47,6 +49,8 @@ export class FishingScene extends Phaser.Scene {
   private tooFarText!: Phaser.GameObjects.Text
   /** Подписи мест ловли на воде — видны, пока выбираешь дальность заброса. */
   private zoneTexts: Phaser.GameObjects.Text[] = []
+  /** Все надписи — чтобы при смене плотности экрана перерисовать их в новом разрешении. */
+  private labels: Phaser.GameObjects.Text[] = []
   private keyLeft?: Phaser.Input.Keyboard.Key
   private keyRight?: Phaser.Input.Keyboard.Key
   private hud!: Hud
@@ -68,15 +72,27 @@ export class FishingScene extends Phaser.Scene {
     super('FishingScene')
   }
 
+  preload() {
+    for (const water of this.pack.waters) if (water.backdrop) this.load.image(backdropKey(water), water.backdrop.image)
+  }
+
   create() {
     this.session = new FishingSession({ zones: zoneSpawns(this.water), tackle: tackleOf(this.loadout) })
     this.session.on((e) => this.onEvent(e))
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
 
+    // Картинка создаётся первой — она под всем остальным
+    this.bg = this.add.image(0, 0, '__DEFAULT').setOrigin(0)
     this.gfx = this.add.graphics()
-    const text = () =>
-      this.add.text(0, 0, '', { fontFamily: 'sans-serif', color: '#ffffff', align: 'center', stroke: '#0b2a3a', strokeThickness: 4 }).setOrigin(0.5)
+    const text = () => {
+      const t = this.add
+        .text(0, 0, '', { fontFamily: 'sans-serif', color: '#ffffff', align: 'center', stroke: '#0b2a3a', strokeThickness: 4 })
+        .setOrigin(0.5)
+        .setResolution(this.pixelRatio)
+      this.labels.push(t)
+      return t
+    }
     this.statusText = text()
     this.fightText = text()
     this.resultText = text()
@@ -139,15 +155,35 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private aimRod(p: Phaser.Input.Pointer) {
-    const w = this.scale.width
-    this.session.setRod((p.x - w / 2) / ((w * ROD_SPAN) / 2))
+    const { w } = this.view
+    this.session.setRod((p.x / this.pixelRatio - w / 2) / ((w * ROD_SPAN) / 2))
   }
 
   /** Бросок туда, куда нажали: высота на экране → дистанция, горизонталь → где ляжет поплавок. */
   private castAt(p: Phaser.Input.Pointer) {
     if (this.panelOpen) return
-    const { width: w, height: h } = this.scale
-    this.session.castTo(this.water3d(w, h).yToDist(p.y), (p.x - w / 2) / ((w * CAST_SPAN) / 2))
+    const { w, h } = this.view
+    const x = p.x / this.pixelRatio
+    this.session.castTo(this.water3d(w, h).yToDist(p.y / this.pixelRatio), (x - w / 2) / ((w * CAST_SPAN) / 2))
+  }
+
+  /** Во сколько раз холст детальнее CSS-пикселей (его задаёт main.ts через zoom). */
+  private get pixelRatio(): number {
+    return 1 / this.scale.zoom
+  }
+
+  /** Размер экрана в CSS-пикселях — в них сцена всё раскладывает; камера увеличивает до пикселей холста. */
+  private get view(): { w: number; h: number } {
+    return { w: this.scale.width / this.pixelRatio, h: this.scale.height / this.pixelRatio }
+  }
+
+  /** Камера и надписи — под текущую плотность экрана. Меняется редко: при переносе окна на другой монитор. */
+  private syncPixelRatio() {
+    const r = this.pixelRatio
+    const cam = this.cameras.main
+    if (cam.zoom === r) return
+    cam.setOrigin(0, 0).setZoom(r)
+    for (const t of this.labels) t.setResolution(r)
   }
 
   private get panelOpen(): boolean {
@@ -155,26 +191,54 @@ export class FishingScene extends Phaser.Scene {
   }
 
   /**
+   * Где на экране лежит фоновая картинка: по высоте экрана, лишнее по бокам обрезается
+   * (на очень широком экране — наоборот, по ширине с обрезкой сверху и снизу). null — картинки нет.
+   */
+  private backdropRect(w: number, h: number) {
+    if (!this.water.backdrop || !this.textures.exists(backdropKey(this.water))) return null
+    const frame = this.textures.getFrame(backdropKey(this.water))
+    const scale = Math.max(w / frame.width, h / frame.height)
+    const dw = frame.width * scale
+    const dh = frame.height * scale
+    return { x: (w - dw) / 2, y: (h - dh) / 2, w: dw, h: dh }
+  }
+
+  /**
    * Перспектива воды: дистанция ↔ экранная Y и масштаб по дальности. Общая для отрисовки и для броска в точку.
    * Нажатие ближе берега — ближайший заброс, в небо — самый дальний.
    */
   private water3d(w: number, h: number) {
-    const horizon = h * HORIZON
-    // Опорные точки «дистанция → доля высоты экрана». Участок заброса (от ближнего края первого места ловли
-    // до дальнего края последнего) растянут почти на полэкрана; вода у берега и за местами ловли сжата.
-    const points: [number, number][] = [
-      [0, 0.84],
-      [DEFAULT_TUNING.castNear, 0.7],
-      [DEFAULT_TUNING.castFar, HORIZON + 0.09],
-      [MAX_DRAW_DISTANCE, HORIZON + 0.02],
-    ]
-    const nearY = h * points[0][1]
-    const farY = h * points[points.length - 1][1]
-    const distToY = (d: number) => h * piecewise(points, d, 0, 1)
+    // Опорные точки «дистанция → экранная Y». С картинкой — по отметкам на ней: места ловли ложатся
+    // на нарисованные глубины. Без картинки — участок заброса растянут почти на полэкрана.
+    const rect = this.backdropRect(w, h)
+    const b = this.water.backdrop
+    const { castNear, castFar } = DEFAULT_TUNING
+    let points: [number, number][]
+    if (rect && b) {
+      const y = (f: number) => rect.y + f * rect.h
+      const levels = b.zoneEdges.length - 1
+      points = [
+        [0, y(b.shore)],
+        ...b.zoneEdges.map((f, i): [number, number] => [castNear + ((castFar - castNear) * i) / levels, y(f)]),
+        [MAX_DRAW_DISTANCE, y(b.waterline + 0.01)],
+      ]
+    } else {
+      points = [
+        [0, h * 0.84],
+        [castNear, h * 0.7],
+        [castFar, h * (HORIZON + 0.09)],
+        [MAX_DRAW_DISTANCE, h * (HORIZON + 0.02)],
+      ]
+    }
+    const horizon = rect && b ? rect.y + b.waterline * rect.h : h * HORIZON
+    const nearY = points[0][1]
+    const farY = points[points.length - 1][1]
+    const distToY = (d: number) => piecewise(points, d, 0, 1)
     return {
       horizon,
+      photo: !!rect,
       distToY,
-      yToDist: (y: number) => piecewise(points, y / h, 1, 0),
+      yToDist: (y: number) => piecewise(points, y, 1, 0),
       perspective: (d: number) => 1 - 0.5 * Phaser.Math.Clamp((nearY - distToY(d)) / (nearY - farY), 0, 1),
       /** Экранная X поплавка по горизонтали заброса -1..1. */
       castToX: (x: number) => w / 2 + (Phaser.Math.Clamp(x, -1, 1) * w * CAST_SPAN) / 2,
@@ -219,19 +283,28 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private draw() {
-    const { width: w, height: h } = this.scale
+    this.syncPixelRatio()
+    const { w, h } = this.view
     const g = this.gfx.clear()
     const s = this.session
     const phase = s.phase
     const fight = phase === 'fighting' ? s.fight : null
     const fontSize = Phaser.Math.Clamp(Math.min(w, h) / 22, 14, 30)
 
-    // Сцена: небо, вода
+    // Сцена: картинка водоёма, а без неё — небо и вода заливкой
     const { horizon, distToY, perspective, castToX } = this.water3d(w, h)
-    const palette = this.water.palette
-    g.fillStyle(palette.sky).fillRect(0, 0, w, horizon)
-    g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.06)
-    g.fillStyle(palette.water).fillRect(0, horizon + h * 0.06, w, h - horizon)
+    const rect = this.backdropRect(w, h)
+    this.bg.setVisible(!!rect)
+    if (rect) {
+      const key = backdropKey(this.water)
+      if (this.bg.texture.key !== key) this.bg.setTexture(key)
+      this.bg.setPosition(rect.x, rect.y).setDisplaySize(rect.w, rect.h)
+    } else {
+      const palette = this.water.palette
+      g.fillStyle(palette.sky).fillRect(0, 0, w, horizon)
+      g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.06)
+      g.fillStyle(palette.water).fillRect(0, horizon + h * 0.06, w, h - horizon)
+    }
 
     // Места ловли: пока игрок решает, куда бросать, — видно, где что и куда не добросить
     const idle = phase === 'idle'
@@ -295,7 +368,8 @@ export class FishingScene extends Phaser.Scene {
     this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
-      .setPosition(w / 2, horizon * 0.55)
+      // В небе, но не ниже верхней десятой экрана: на картинках дальний берег стоит ниже, чем у заливки
+      .setPosition(w / 2, Math.min(horizon * 0.55, h * 0.11))
       .setText(this.texts.hints[phase])
 
     // Ненавязчиво: мелко, над поплавком, и само гаснет
@@ -331,11 +405,13 @@ export class FishingScene extends Phaser.Scene {
    */
   private drawZones(w: number, h: number, fontSize: number) {
     const g = this.gfx
-    const { distToY, yToDist, perspective, castToX } = this.water3d(w, h)
+    const { distToY, yToDist, perspective, castToX, photo } = this.water3d(w, h)
     const reach = this.session.castLevels
     // На ПК подсвечиваем место под мышью и показываем, куда ляжет поплавок. На телефоне наведения нет.
     const pointer = this.input.activePointer
-    const hover = !pointer.wasTouch && !this.panelOpen && pointer.y > 0 ? yToDist(pointer.y) : null
+    const px = pointer.x / this.pixelRatio
+    const py = pointer.y / this.pixelRatio
+    const hover = !pointer.wasTouch && !this.panelOpen && py > 0 ? yToDist(py) : null
     const landing = hover === null ? null : Phaser.Math.Clamp(hover, DEFAULT_TUNING.castNear, this.session.maxCast)
     const hoverLevel = landing === null ? null : this.levelAt(landing)
     this.water.zones.forEach((zone, i) => {
@@ -345,7 +421,8 @@ export class FishingScene extends Phaser.Scene {
       const locked = i >= reach
       if (locked) g.fillStyle(COLOR.panel, 0.5).fillRect(0, top, w, bottom - top)
       else if (hoverLevel === i) g.fillStyle(COLOR.ok, 0.22).fillRect(0, top, w, bottom - top)
-      else g.fillStyle(COLOR.white, i % 2 ? 0.05 : 0.1).fillRect(0, top, w, bottom - top)
+      // На картинке места и так различимы по воде — полосы-зебра нужны только на заливке
+      else if (!photo) g.fillStyle(COLOR.white, i % 2 ? 0.05 : 0.1).fillRect(0, top, w, bottom - top)
       g.lineStyle(1, COLOR.white, 0.3).lineBetween(0, top, w, top)
       if (i === 0) g.lineBetween(0, bottom, w, bottom)
 
@@ -360,7 +437,7 @@ export class FishingScene extends Phaser.Scene {
 
     if (landing !== null) {
       const r = Math.max(6, w * 0.012) * perspective(landing)
-      this.drawFloat(castToX((pointer.x - w / 2) / ((w * CAST_SPAN) / 2)), distToY(landing), r, 0.6)
+      this.drawFloat(castToX((px - w / 2) / ((w * CAST_SPAN) / 2)), distToY(landing), r, 0.6)
     }
   }
 
@@ -459,6 +536,10 @@ export class FishingScene extends Phaser.Scene {
     this.gfx.fillStyle(COLOR.floatBottom, 1 - sunk).fillCircle(x, y + r * 0.4, r * 0.8)
     this.gfx.fillStyle(COLOR.floatTop, 1 - sunk * 0.5).fillCircle(x, y - r * 0.3, r)
   }
+}
+
+function backdropKey(water: WaterBody): string {
+  return `bg-${water.id}`
 }
 
 /**
