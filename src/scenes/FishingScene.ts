@@ -1,19 +1,25 @@
 import Phaser from 'phaser'
 import type { HookedFish } from '../core/fish.ts'
-import { FishingSession, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
+import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
-import { tackleOf, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { tackleOf, zoneSpawns, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
 import { WaterPanel } from '../ui/WaterPanel.ts'
-import { toMeters } from '../ui/units.ts'
+import { formatDepth, toMeters } from '../ui/units.ts'
 
 /** Дальняя граница отрисовки воды в единицах дистанции (равна длине лески). */
 const MAX_DRAW_DISTANCE = 1.5
+/** Где проходит горизонт, доля высоты экрана. Небо — только под счётчики и подсказку. */
+const HORIZON = 0.16
 /** Итог нельзя закрыть сразу, чтобы игрок, жмущий кнопку, успел его прочитать. */
 const RESULT_MIN_SECONDS = 0.6
 /** Какая доля ширины экрана соответствует полному отведению пальца (-1..1). */
 const ROD_SPAN = 0.8
+/** Какая доля ширины экрана доступна для заброса по горизонтали. */
+const CAST_SPAN = 0.9
+/** Сколько секунд висит предупреждение «удочка не добросит». */
+const TOO_FAR_SECONDS = 2.5
 
 const COLOR = {
   rod: 0x6b4423,
@@ -38,6 +44,9 @@ export class FishingScene extends Phaser.Scene {
   private walletText!: Phaser.GameObjects.Text
   private fightText!: Phaser.GameObjects.Text
   private resultText!: Phaser.GameObjects.Text
+  private tooFarText!: Phaser.GameObjects.Text
+  /** Подписи мест ловли на воде — видны, пока выбираешь дальность заброса. */
+  private zoneTexts: Phaser.GameObjects.Text[] = []
   private keyLeft?: Phaser.Input.Keyboard.Key
   private keyRight?: Phaser.Input.Keyboard.Key
   private hud!: Hud
@@ -52,6 +61,7 @@ export class FishingScene extends Phaser.Scene {
   private catches = 0
   private elapsed = 0
   private nibbleAge = Infinity
+  private tooFarAge = Infinity
   private result: Result | null = null
 
   constructor() {
@@ -59,7 +69,7 @@ export class FishingScene extends Phaser.Scene {
   }
 
   create() {
-    this.session = new FishingSession({ spawns: this.water.spawns, tackle: tackleOf(this.loadout) })
+    this.session = new FishingSession({ zones: zoneSpawns(this.water), tackle: tackleOf(this.loadout) })
     this.session.on((e) => this.onEvent(e))
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
@@ -70,16 +80,19 @@ export class FishingScene extends Phaser.Scene {
     this.statusText = text()
     this.fightText = text()
     this.resultText = text()
+    this.tooFarText = text()
     this.walletText = text().setOrigin(0, 0).setAlign('left')
+    // С запасом на водоём с наибольшим числом мест; лишние просто не показываем
+    this.zoneTexts = Array.from({ length: MAX_CAST_LEVELS }, () => text().setOrigin(1, 0.5).setAlign('right'))
 
     // Интерфейс вне боя — HTML поверх игры: кнопки внизу и панели выбора
     this.tacklePanel = new TacklePanel(this.pack, this.loadout, (loadout) => {
       this.loadout = loadout
-      this.session.equip(this.water.spawns, tackleOf(loadout))
+      this.session.equip(zoneSpawns(this.water), tackleOf(loadout))
     })
     this.waterPanel = new WaterPanel(this.pack, this.water, (water) => {
       this.water = water
-      this.session.equip(water.spawns, tackleOf(this.loadout))
+      this.session.equip(zoneSpawns(water), tackleOf(this.loadout))
     })
     this.hud = new Hud()
     this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
@@ -92,13 +105,15 @@ export class FishingScene extends Phaser.Scene {
 
     this.input.mouse?.disableContextMenu()
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      // Между забросами нажатие — это бросок в точку; в остальное время — палец на удочке
+      if (this.session.phase === 'idle') return this.castAt(p)
       this.aimRod(p)
       this.press()
     })
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => p.isDown && this.aimRod(p))
     this.input.on('pointerup', () => this.session.release())
     this.input.on('pointerupoutside', () => this.session.release())
-    // На ПК: пробел — усилие, стрелки — отвести удочку
+    // На ПК: пробел — усилие (и заброс на всю дальность удочки), стрелки — отвести удочку
     const kb = this.input.keyboard
     kb?.on('keydown-SPACE', (e: KeyboardEvent) => !e.repeat && this.press())
     kb?.on('keyup-SPACE', () => this.session.release())
@@ -113,6 +128,7 @@ export class FishingScene extends Phaser.Scene {
     const dt = deltaMs / 1000
     this.elapsed += dt
     this.nibbleAge += dt
+    this.tooFarAge += dt
     this.steerWithKeys(dt)
     this.session.update(dt)
     this.draw()
@@ -127,6 +143,44 @@ export class FishingScene extends Phaser.Scene {
     this.session.setRod((p.x - w / 2) / ((w * ROD_SPAN) / 2))
   }
 
+  /** Бросок туда, куда нажали: высота на экране → дистанция, горизонталь → где ляжет поплавок. */
+  private castAt(p: Phaser.Input.Pointer) {
+    if (this.panelOpen) return
+    const { width: w, height: h } = this.scale
+    this.session.castTo(this.water3d(w, h).yToDist(p.y), (p.x - w / 2) / ((w * CAST_SPAN) / 2))
+  }
+
+  private get panelOpen(): boolean {
+    return this.tacklePanel.isOpen || this.waterPanel.isOpen
+  }
+
+  /**
+   * Перспектива воды: дистанция ↔ экранная Y и масштаб по дальности. Общая для отрисовки и для броска в точку.
+   * Нажатие ближе берега — ближайший заброс, в небо — самый дальний.
+   */
+  private water3d(w: number, h: number) {
+    const horizon = h * HORIZON
+    // Опорные точки «дистанция → доля высоты экрана». Участок заброса (от ближнего края первого места ловли
+    // до дальнего края последнего) растянут почти на полэкрана; вода у берега и за местами ловли сжата.
+    const points: [number, number][] = [
+      [0, 0.84],
+      [DEFAULT_TUNING.castNear, 0.7],
+      [DEFAULT_TUNING.castFar, HORIZON + 0.09],
+      [MAX_DRAW_DISTANCE, HORIZON + 0.02],
+    ]
+    const nearY = h * points[0][1]
+    const farY = h * points[points.length - 1][1]
+    const distToY = (d: number) => h * piecewise(points, d, 0, 1)
+    return {
+      horizon,
+      distToY,
+      yToDist: (y: number) => piecewise(points, y / h, 1, 0),
+      perspective: (d: number) => 1 - 0.5 * Phaser.Math.Clamp((nearY - distToY(d)) / (nearY - farY), 0, 1),
+      /** Экранная X поплавка по горизонтали заброса -1..1. */
+      castToX: (x: number) => w / 2 + (Phaser.Math.Clamp(x, -1, 1) * w * CAST_SPAN) / 2,
+    }
+  }
+
   private steerWithKeys(dt: number) {
     const fight = this.session.fight
     const left = this.keyLeft?.isDown ?? false
@@ -136,7 +190,7 @@ export class FishingScene extends Phaser.Scene {
 
   private press() {
     // Пока открыта панель, пробел не должен забрасывать удочку у неё за спиной
-    if (this.tacklePanel.isOpen || this.waterPanel.isOpen) return
+    if (this.panelOpen) return
     const phase = this.session.phase
     if ((phase === 'caught' || phase === 'escaped') && this.session.timeInPhase < RESULT_MIN_SECONDS) return
     this.session.press()
@@ -155,6 +209,9 @@ export class FishingScene extends Phaser.Scene {
       case 'escaped':
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
         break
+      case 'cast':
+        this.tooFarAge = e.clamped ? 0 : Infinity
+        break
       case 'phase':
         if (e.phase === 'idle') this.result = null
         break
@@ -170,16 +227,16 @@ export class FishingScene extends Phaser.Scene {
     const fontSize = Phaser.Math.Clamp(Math.min(w, h) / 22, 14, 30)
 
     // Сцена: небо, вода
-    const horizon = h * 0.3
+    const { horizon, distToY, perspective, castToX } = this.water3d(w, h)
     const palette = this.water.palette
     g.fillStyle(palette.sky).fillRect(0, 0, w, horizon)
-    g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.12)
-    g.fillStyle(palette.water).fillRect(0, horizon + h * 0.12, w, h - horizon)
+    g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.06)
+    g.fillStyle(palette.water).fillRect(0, horizon + h * 0.06, w, h - horizon)
 
-    const nearY = h * 0.84
-    const farY = horizon + h * 0.03
-    const distToY = (d: number) => nearY + (farY - nearY) * Phaser.Math.Clamp(d / MAX_DRAW_DISTANCE, 0, 1)
-    const perspective = (d: number) => 1 - 0.5 * Phaser.Math.Clamp(d / MAX_DRAW_DISTANCE, 0, 1)
+    // Места ловли: пока игрок решает, куда бросать, — видно, где что и куда не добросить
+    const idle = phase === 'idle'
+    this.zoneTexts.forEach((t, i) => t.setVisible(idle && i < this.water.zones.length))
+    if (idle) this.drawZones(w, h, fontSize)
 
     // Удочка наклоняется туда, куда отведён палец, и гнётся от усилия
     const rodX = fight?.rodX ?? 0
@@ -189,7 +246,7 @@ export class FishingScene extends Phaser.Scene {
 
     // Поплавок или рыба на конце лески
     let end: { x: number; y: number } | null = null
-    const castTarget = { x: w * 0.5 + Math.sin(this.elapsed * 0.7) * w * 0.01, y: distToY(s.cast) }
+    const castTarget = { x: castToX(s.castX) + Math.sin(this.elapsed * 0.7) * w * 0.01, y: distToY(s.cast) }
     const floatR = Math.max(6, w * 0.012) * perspective(s.cast)
 
     if (phase === 'casting') {
@@ -212,7 +269,9 @@ export class FishingScene extends Phaser.Scene {
       const k = perspective(fight.distance)
       // Перед рывком тень рыбы дрожит — это подсказка «сейчас рванёт»
       const shake = fight.mode === 'warn' ? Math.sin(this.elapsed * 60) * w * 0.006 : 0
-      end = { x: w * 0.5 + fight.fishX * w * 0.38 + shake, y: distToY(fight.distance) }
+      // Рыба клюнула там, где лежал поплавок, и по мере подмотки подходит к удочке
+      const offset = (castToX(s.castX) - w / 2) * Math.min(fight.distance / s.cast, 1)
+      end = { x: w * 0.5 + offset + fight.fishX * w * 0.38 + shake, y: distToY(fight.distance) }
       g.fillStyle(COLOR.fish, 0.85).fillEllipse(end.x, end.y, w * 0.09 * k, w * 0.035 * k)
       if (fight.mode === 'rush') {
         g.lineStyle(2, COLOR.white, 0.7).strokeCircle(end.x, end.y, w * 0.05 * k * (1 + ((this.elapsed * 3) % 1)))
@@ -232,13 +291,22 @@ export class FishingScene extends Phaser.Scene {
       .setFontSize(fontSize * 0.8)
       .setPosition(12, 10)
       .setText(`${this.texts.wallet}: ${this.silver}   ${this.texts.catchCount}: ${this.catches}`)
-    const idle = phase === 'idle'
     this.hud.setVisible(idle)
     this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
-      .setPosition(w / 2, horizon * 0.3)
+      .setPosition(w / 2, horizon * 0.55)
       .setText(this.texts.hints[phase])
+
+    // Ненавязчиво: мелко, над поплавком, и само гаснет
+    const tooFar = Phaser.Math.Clamp((TOO_FAR_SECONDS - this.tooFarAge) / 0.6, 0, 1)
+    this.tooFarText.setVisible(tooFar > 0 && !idle)
+    if (tooFar > 0) {
+      // Над поплавком, но целиком в экране: центр прижимается от краёв на половину ширины надписи
+      const t = this.tooFarText.setFontSize(fontSize * 0.7).setWordWrapWidth(w * 0.9).setAlpha(tooFar).setText(this.texts.cast.tooFar)
+      const half = t.width / 2 + 8
+      t.setPosition(Phaser.Math.Clamp(castTarget.x, half, Math.max(half, w - half)), castTarget.y - fontSize * 1.6)
+    }
 
     this.fightText.setVisible(!!fight)
     if (fight) {
@@ -255,6 +323,52 @@ export class FishingScene extends Phaser.Scene {
         g.fillTriangle(w / 2 + len * 0.45, h * 0.45, w / 2 + len * 0.7, h * 0.45 - len * 0.18, w / 2 + len * 0.7, h * 0.45 + len * 0.18)
       }
     }
+  }
+
+  /**
+   * Полосы мест ловли на воде, от берега к горизонту. Куда удочка не добрасывает — затемнено и подписано замком,
+   * место под мышью подсвечено.
+   */
+  private drawZones(w: number, h: number, fontSize: number) {
+    const g = this.gfx
+    const { distToY, yToDist, perspective, castToX } = this.water3d(w, h)
+    const reach = this.session.castLevels
+    // На ПК подсвечиваем место под мышью и показываем, куда ляжет поплавок. На телефоне наведения нет.
+    const pointer = this.input.activePointer
+    const hover = !pointer.wasTouch && !this.panelOpen && pointer.y > 0 ? yToDist(pointer.y) : null
+    const landing = hover === null ? null : Phaser.Math.Clamp(hover, DEFAULT_TUNING.castNear, this.session.maxCast)
+    const hoverLevel = landing === null ? null : this.levelAt(landing)
+    this.water.zones.forEach((zone, i) => {
+      const [from, to] = castLevelRange(i, this.water.zones.length)
+      const bottom = distToY(from)
+      const top = distToY(to)
+      const locked = i >= reach
+      if (locked) g.fillStyle(COLOR.panel, 0.5).fillRect(0, top, w, bottom - top)
+      else if (hoverLevel === i) g.fillStyle(COLOR.ok, 0.22).fillRect(0, top, w, bottom - top)
+      else g.fillStyle(COLOR.white, i % 2 ? 0.05 : 0.1).fillRect(0, top, w, bottom - top)
+      g.lineStyle(1, COLOR.white, 0.3).lineBetween(0, top, w, top)
+      if (i === 0) g.lineBetween(0, bottom, w, bottom)
+
+      const label = this.texts.cast.zone(zone.name, formatDepth(zone.depthM))
+      this.zoneTexts[i]
+        .setFontSize(fontSize * 0.7)
+        .setWordWrapWidth(w * 0.55)
+        .setAlpha(locked ? 0.75 : 1)
+        .setPosition(w - 10, (top + bottom) / 2)
+        .setText(locked ? `🔒 ${label}\n${this.texts.cast.locked}` : label)
+    })
+
+    if (landing !== null) {
+      const r = Math.max(6, w * 0.012) * perspective(landing)
+      this.drawFloat(castToX((pointer.x - w / 2) / ((w * CAST_SPAN) / 2)), distToY(landing), r, 0.6)
+    }
+  }
+
+  /** Уровень места ловли по дистанции — как его считает ядро. */
+  private levelAt(distance: number): number {
+    const levels = this.water.zones.length
+    for (let i = 0; i < levels; i++) if (distance < castLevelRange(i, levels)[1]) return i
+    return levels - 1
   }
 
   /**
@@ -297,7 +411,7 @@ export class FishingScene extends Phaser.Scene {
               : ''
     this.fightText
       .setFontSize(fontSize * 0.85)
-      .setPosition(w / 2, horizon * 0.62)
+      .setPosition(w / 2, horizon + h * 0.04)
       .setText(warning ? `${meters} м — ${warning}` : `${meters} м`)
   }
 
@@ -345,6 +459,20 @@ export class FishingScene extends Phaser.Scene {
     this.gfx.fillStyle(COLOR.floatBottom, 1 - sunk).fillCircle(x, y + r * 0.4, r * 0.8)
     this.gfx.fillStyle(COLOR.floatTop, 1 - sunk * 0.5).fillCircle(x, y - r * 0.3, r)
   }
+}
+
+/**
+ * Кусочно-линейная функция по опорным точкам [a, b]: from/to — индексы входа и выхода (0 → 1 или 1 → 0 для обратной).
+ * Вход за крайними точками прижимается к ним.
+ */
+function piecewise(points: readonly [number, number][], x: number, from: 0 | 1, to: 0 | 1): number {
+  const sorted = [...points].sort((p, q) => p[from] - q[from])
+  if (x <= sorted[0][from]) return sorted[0][to]
+  for (let i = 1; i < sorted.length; i++) {
+    const [a, b] = [sorted[i - 1], sorted[i]]
+    if (x <= b[from]) return Phaser.Math.Linear(a[to], b[to], (x - a[from]) / (b[from] - a[from]))
+  }
+  return sorted[sorted.length - 1][to]
 }
 
 function effortColor(f: FightView): number {

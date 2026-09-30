@@ -1,5 +1,5 @@
 import { DEFAULT_SIZE_SKEW, makeFish, type FishSpawn, type FishSpecies, type HookedFish } from '../core/fish.ts'
-import { FishingSession, type EscapeReason, type FightView, type Tackle, type Tuning } from '../core/FishingSession.ts'
+import { castLevelRange, FishingSession, type EscapeReason, type FightView, type Tackle, type Tuning } from '../core/FishingSession.ts'
 import { seededRng } from '../core/rng.ts'
 
 // Прогон боёв без графики: бот-игрок против ядра. Используется тестами контента и скриптом баланса.
@@ -27,6 +27,8 @@ export function makeBot(session: FishingSession, reactionSeconds: number): (f: F
   }
 }
 
+const mean = ([a, b]: [number, number]) => (a + b) / 2
+
 export interface FightOutcome {
   result: 'caught' | EscapeReason
   seconds: number
@@ -38,12 +40,14 @@ export interface FightSetup {
   seed: number
   reactionSeconds?: number
   tuning?: Tuning
+  /** Куда бросает бот: в середину уровня level из levels мест ловли. По умолчанию — так далеко, как добросит удочка. */
+  cast?: { level: number; levels: number }
 }
 
 /** Один бой с заданной особью: заброс, подсечка сразу после поклёвки, дальше играет бот. */
 export function simulateFight(fish: HookedFish, setup: FightSetup): FightOutcome {
   const session = new FishingSession({
-    spawns: [{ species: fish.species, rarity: 1 }],
+    zones: [[{ species: fish.species, rarity: 1 }]],
     tackle: setup.tackle,
     rng: seededRng(setup.seed),
     tuning: setup.tuning,
@@ -56,7 +60,9 @@ export function simulateFight(fish: HookedFish, setup: FightSetup): FightOutcome
 
   // Фазу читаем через функцию: иначе TypeScript сужает тип после первого цикла и не видит смены фазы после press()
   const phase = () => session.phase
-  session.press()
+  // В середину нужного уровня; без уровня — так далеко, как добрасывает удочка
+  if (!setup.cast) session.press()
+  else session.castTo(mean(castLevelRange(setup.cast.level, setup.cast.levels, setup.tuning)))
   while (phase() !== 'bite') session.update(DT)
   session.press()
 

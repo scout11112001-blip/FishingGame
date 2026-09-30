@@ -19,7 +19,7 @@ function tiers(pack: ContentPack): { name: string; loadout: Loadout }[] {
   const pick = <T>(items: readonly T[], i: number) => items[Math.min(i, items.length - 1)]
   return Array.from({ length: count }, (_, i) => {
     const loadout = i === 0 ? pack.starter : { rod: pick(pack.rods, i), line: pick(pack.lines, i), reel: pick(pack.reels, i) }
-    return { name: `${loadout.line.name} + ${loadout.reel.name}`, loadout }
+    return { name: `${loadout.rod.name} + ${loadout.line.name} + ${loadout.reel.name}`, loadout }
   })
 }
 
@@ -34,16 +34,20 @@ const reasons = (s: Summary) =>
 console.log(`Пакет «${pack.title}» (${pack.id}), бот с реакцией ${REACTION_SECONDS} с, ${FIGHTS} боёв на вид`)
 for (const water of pack.waters) {
   for (const { name, loadout } of tiers(pack)) {
-    console.log(`\n${water.name} — ${name}`)
+    // Бросаем так далеко, как добрасывает удочка: там самая сильная рыба
+    const levels = water.zones.length
+    const castLevel = Math.min(loadout.rod.castLevels, levels) - 1
+    const zone = water.zones[castLevel]
+    console.log(`\n${water.name}, ${zone.name} — ${name}`)
     console.log('  рыба       доля   ловится  время   самая крупная   срывы')
     let waterCatch = 0
     let waterSeconds = 0
-    for (const spawn of water.spawns) {
+    for (const spawn of zone.spawns) {
       const { species } = spawn
-      const setup = { tackle: tackleOf(loadout), reactionSeconds: REACTION_SECONDS }
+      const setup = { tackle: tackleOf(loadout), reactionSeconds: REACTION_SECONDS, cast: { level: castLevel, levels } }
       const all = simulateSpecies(spawn, setup, FIGHTS)
       const largest = simulateLargest(species, setup, 50)
-      const share = spawnShare(water.spawns, species)
+      const share = spawnShare(zone.spawns, species)
       waterCatch += share * all.catchRate
       waterSeconds += share * all.catchRate * all.avgSeconds
       console.log(

@@ -3,6 +3,13 @@ import { randRange, type Rng } from './rng.ts'
 
 export type Phase = 'idle' | 'casting' | 'waiting' | 'bite' | 'fighting' | 'caught' | 'escaped'
 
+/**
+ * Дальность заброса делится на уровни — места ловли водоёма: у берега → дальше и глубже. На каждом своя рыба.
+ * Мест в водоёме от 1 до MAX_CAST_LEVELS, весь диапазон заброса делится между ними поровну.
+ * Удочка определяет, до скольких уровней она добрасывает.
+ */
+export const MAX_CAST_LEVELS = 3
+
 export type EscapeReason =
   | 'tooEarly' // подсёк до поклёвки — спугнул
   | 'missed' // не успел подсечь
@@ -13,6 +20,8 @@ export type EscapeReason =
 
 export type FishingEvent =
   | { type: 'phase'; phase: Phase }
+  /** Заброс. clamped — игрок целился дальше, чем добрасывает удочка, и поплавок упал на её пределе. */
+  | { type: 'cast'; level: number; clamped: boolean }
   | { type: 'nibble' }
   | { type: 'caught'; fish: HookedFish; price: number }
   | { type: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
@@ -23,15 +32,17 @@ export interface Tackle {
   lineStrength: number
   /** Скорость подмотки при идеальном противодействии, долей дистанции в секунду. */
   reelSpeed: number
-  /** Дальность заброса (0..1, где 1 — у горизонта). */
-  castMin: number
-  castMax: number
+  /** До скольких уровней заброса добрасывает удочка (1..MAX_CAST_LEVELS). */
+  castLevels: number
 }
 
 /** Поведение рыбы в бою: спокойно водит из стороны в сторону → предупреждает → рвёт в другую сторону. */
 export type FishMode = 'calm' | 'warn' | 'rush'
 
 export interface Tuning {
+  /** Ближайшая и самая дальняя точка заброса. Отрезок делится поровну между уровнями. */
+  castNear: number
+  castFar: number
   castDuration: number
   biteDelayMin: number
   biteDelayMax: number
@@ -90,6 +101,8 @@ export interface Tuning {
 }
 
 export const DEFAULT_TUNING: Tuning = {
+  castNear: 0.4,
+  castFar: 1,
   castDuration: 0.7,
   biteDelayMin: 2.5,
   biteDelayMax: 7,
@@ -172,24 +185,35 @@ interface FightState {
   sideTimer: number
 }
 
+/** Какая рыба где клюёт: zones[уровень заброса] — список рыб на этой дальности. */
+export type CastZones = readonly (readonly FishSpawn[])[]
+
 export interface SessionOptions {
-  /** Какая рыба водится там, где рыбачим. */
-  spawns: readonly FishSpawn[]
+  zones: CastZones
   tackle: Tackle
   rng?: Rng
   tuning?: Tuning
-  /** Кто клюнет. По умолчанию — случайная рыба из spawns; подменяется в тестах и симуляции. */
+  /** Кто клюнет. По умолчанию — случайная рыба уровня заброса; подменяется в тестах и симуляции. */
   pickFish?: (rng: Rng, spawns: readonly FishSpawn[]) => HookedFish
 }
 
+/** Границы уровня заброса по дистанции, [ближняя, дальняя), когда в водоёме levels мест ловли. */
+export function castLevelRange(level: number, levels: number, tuning: Tuning = DEFAULT_TUNING): [number, number] {
+  const step = (tuning.castFar - tuning.castNear) / levels
+  return [tuning.castNear + step * level, tuning.castNear + step * (level + 1)]
+}
+
 /**
- * Один цикл рыбалки: заброс → ожидание → поклёвка → вываживание → итог.
- * Управление: press/release (палец прижат или нет) и setRod (куда отведён палец). Ничего не знает о графике.
+ * Один цикл рыбалки: заброс в точку → ожидание → поклёвка → вываживание → итог.
+ * Управление: castTo (куда бросить), press/release (палец прижат или нет) и setRod (куда отведён палец).
+ * Ничего не знает о графике.
  */
 export class FishingSession {
   private _phase: Phase = 'idle'
   private phaseTime = 0
   private castDistance = 0
+  private _castX = 0
+  private _castLevel = 0
   private biteAt = 0
   private nextNibbleAt = 0
   private hooked: HookedFish | null = null
@@ -197,14 +221,14 @@ export class FishingSession {
   private holding = false
   private rodX = 0
   private listeners: ((e: FishingEvent) => void)[] = []
-  private spawns: readonly FishSpawn[]
+  private zones: CastZones
   private tackle: Tackle
   private readonly rng: Rng
   private readonly tuning: Tuning
   private readonly pickFish: (rng: Rng, spawns: readonly FishSpawn[]) => HookedFish
 
   constructor(options: SessionOptions) {
-    this.spawns = options.spawns
+    this.zones = options.zones
     this.tackle = options.tackle
     this.rng = options.rng ?? Math.random
     this.tuning = options.tuning ?? DEFAULT_TUNING
@@ -212,9 +236,9 @@ export class FishingSession {
   }
 
   /** Сменить водоём и снасть. Только между забросами: посреди боя менять леску нельзя. */
-  equip(spawns: readonly FishSpawn[], tackle: Tackle): boolean {
+  equip(zones: CastZones, tackle: Tackle): boolean {
     if (this._phase !== 'idle') return false
-    this.spawns = spawns
+    this.zones = zones
     this.tackle = tackle
     return true
   }
@@ -232,6 +256,31 @@ export class FishingSession {
   get castProgress(): number {
     if (this._phase === 'casting') return Math.min(this.phaseTime / this.tuning.castDuration, 1)
     return this._phase === 'idle' ? 0 : 1
+  }
+
+  /** Самая дальняя точка, куда добрасывает удочка. */
+  get maxCast(): number {
+    return castLevelRange(this.castLevels - 1, this.levels, this.tuning)[1]
+  }
+
+  /** Куда по горизонтали упал поплавок, -1..1. На механику не влияет — только на картинку. */
+  get castX(): number {
+    return this._castX
+  }
+
+  /** Сколько мест ловли в водоёме. */
+  get levels(): number {
+    return Math.max(1, this.zones.length)
+  }
+
+  /** До скольких уровней добрасывает текущая удочка в этом водоёме: дальше последнего места не бросить. */
+  get castLevels(): number {
+    return clamp(Math.round(this.tackle.castLevels), 1, this.levels)
+  }
+
+  /** Уровень последнего заброса, 0..levels-1. */
+  get castLevel(): number {
+    return this._castLevel
   }
 
   /** Сколько осталось на подсечку, 0..1 (1 — только клюнуло). */
@@ -276,7 +325,7 @@ export class FishingSession {
   press(): void {
     switch (this._phase) {
       case 'idle':
-        this.startCast()
+        this.castTo(Infinity)
         break
       case 'waiting':
         this.escape('tooEarly')
@@ -297,6 +346,24 @@ export class FishingSession {
       case 'casting':
         break
     }
+  }
+
+  /**
+   * Забросить в точку: distance — дистанция, куда целится игрок, x — по горизонтали (-1..1).
+   * Ближе берега не упадёт, дальше предела удочки — тоже: тогда поплавок ложится на пределе, а событие cast
+   * сообщает clamped. Только между забросами.
+   */
+  castTo(distance: number, x = 0): boolean {
+    if (this._phase !== 'idle') return false
+    const max = this.maxCast
+    // Space на ПК бросает «на максимум» через Infinity — это не промах мимо удочки
+    const clamped = distance > max + 1e-9 && Number.isFinite(distance)
+    this.castDistance = clamp(distance, this.tuning.castNear, max)
+    this._castX = clamp(x, -1, 1)
+    this._castLevel = this.levelOf(this.castDistance)
+    this.setPhase('casting')
+    this.emit({ type: 'cast', level: this._castLevel, clamped })
+    return true
   }
 
   release(): void {
@@ -320,7 +387,8 @@ export class FishingSession {
         break
       case 'waiting':
         if (this.phaseTime >= this.biteAt) {
-          this.hooked = this.pickFish(this.rng, this.spawns)
+          const zone = this.zones[Math.min(this._castLevel, this.zones.length - 1)]
+          this.hooked = this.pickFish(this.rng, zone)
           this.setPhase('bite')
         } else if (this.phaseTime >= this.nextNibbleAt) {
           this.emit({ type: 'nibble' })
@@ -336,9 +404,11 @@ export class FishingSession {
     }
   }
 
-  private startCast() {
-    this.castDistance = randRange(this.rng, this.tackle.castMin, this.tackle.castMax)
-    this.setPhase('casting')
+  /** Уровень по дистанции. Точка ровно на пределе удочки — ещё её последний уровень, а не следующий. */
+  private levelOf(distance: number): number {
+    const t = this.tuning
+    const level = Math.floor(((distance - t.castNear) / (t.castFar - t.castNear)) * this.levels)
+    return clamp(level, 0, this.castLevels - 1)
   }
 
   private startWaiting() {

@@ -1,7 +1,6 @@
 import type { ContentPack, Line, Loadout, Reel, Rod } from '../content/types.ts'
 import { button, card, el } from './dom.ts'
 import { Sheet } from './Sheet.ts'
-import { toMeters } from './units.ts'
 
 type Slot = keyof Loadout
 type Item = Rod | Line | Reel
@@ -65,13 +64,15 @@ export class TacklePanel {
       const c = card(item.name, item.description, selected ? this.pack.texts.ui.selected : null, () => this.select(slot, item))
 
       const stat = this.statOf(slot, item)
-      const row = el('div', 'sheet-stat')
-      row.append(el('span', '', stat.label), el('span', 'sheet-stat-value', stat.value))
-      const bar = el('div', 'sheet-bar')
-      const fill = el('div', 'sheet-bar-fill')
-      fill.style.width = `${Math.round(stat.fill * 100)}%`
-      bar.append(fill)
-      c.append(row, bar)
+      if (stat) {
+        const row = el('div', 'sheet-stat')
+        row.append(el('span', '', stat.label), el('span', 'sheet-stat-value', stat.value))
+        const bar = el('div', 'sheet-bar')
+        const fill = el('div', 'sheet-bar-fill')
+        fill.style.width = `${Math.round(stat.fill * 100)}%`
+        bar.append(fill)
+        c.append(row, bar)
+      }
 
       const li = el('li')
       li.append(c)
@@ -89,15 +90,13 @@ export class TacklePanel {
     return slot === 'rod' ? this.pack.rods : slot === 'line' ? this.pack.lines : this.pack.reels
   }
 
-  private statOf(slot: Slot, item: Item): Stat {
+  /** Числовая характеристика предмета. У удочки её нет: что она даёт, сказано в описании. */
+  private statOf(slot: Slot, item: Item): Stat | null {
     const s = this.pack.texts.tackle.stats
     const max = (values: number[]) => Math.max(...values)
     // Множитель — относительно самого слабого предмета: «×1,7» понятнее, чем «1.7»
     const times = (x: number, values: number[]) => `×${(x / Math.min(...values)).toFixed(1).replace('.', ',')}`
-    if (slot === 'rod') {
-      const rod = item as Rod
-      return { label: s.cast, value: `${toMeters(rod.castMin)}–${toMeters(rod.castMax)} м`, fill: rod.castMax / max(this.pack.rods.map((r) => r.castMax)) }
-    }
+    if (slot === 'rod') return null
     if (slot === 'line') {
       const values = this.pack.lines.map((l) => l.strength)
       const line = item as Line

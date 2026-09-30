@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { makeFish, type FishSpecies } from './fish.ts'
-import { DEFAULT_TUNING, FishingSession, type FightView, type FishingEvent, type Phase, type Tackle } from './FishingSession.ts'
+import { castLevelRange, MAX_CAST_LEVELS, DEFAULT_TUNING, FishingSession, type FightView, type FishingEvent, type Phase, type Tackle } from './FishingSession.ts'
 import { seededRng } from './rng.ts'
 
-const TACKLE: Tackle = { lineStrength: 1, reelSpeed: 0.1, castMin: 0.8, castMax: 0.8 }
+const TACKLE: Tackle = { lineStrength: 1, reelSpeed: 0.1, castLevels: MAX_CAST_LEVELS }
 
 const small: FishSpecies = { id: 'small', name: 'Мелкая', minWeightKg: 1, maxWeightKg: 1, pricePerKg: 10, strength: 0.2 }
 const big: FishSpecies = { id: 'big', name: 'Крупная', minWeightKg: 1, maxWeightKg: 1, pricePerKg: 10, strength: 1 }
@@ -11,7 +11,7 @@ const big: FishSpecies = { id: 'big', name: 'Крупная', minWeightKg: 1, ma
 const DT = 1 / 60
 
 function makeSession(pool: FishSpecies[], seed = 1) {
-  const session = new FishingSession({ spawns: pool.map((species) => ({ species, rarity: 1 })), tackle: TACKLE, rng: seededRng(seed) })
+  const session = new FishingSession({ zones: [pool.map((species) => ({ species, rarity: 1 }))], tackle: TACKLE, rng: seededRng(seed) })
   const events: FishingEvent[] = []
   session.on((e) => events.push(e))
   return { session, events }
@@ -27,7 +27,12 @@ function runUntil(session: FishingSession, done: () => boolean, maxSeconds = 300
   throw new Error(`не дождались условия, фаза ${session.phase}`)
 }
 
-/** Заброс, ожидание поклёвки и подсечка — сессия в бою, палец прижат. */
+/** Заброс к самому берегу. */
+function tapCast(session: FishingSession) {
+  session.castTo(0)
+}
+
+/** Заброс на всю дальность (нажатие без точки — как пробел на ПК), ожидание поклёвки и подсечка — сессия в бою, палец прижат. */
 function hook(session: FishingSession) {
   session.press()
   runUntil(session, () => session.phase === 'bite')
@@ -64,21 +69,21 @@ describe('FishingSession: до подсечки', () => {
 
   it('до поклёвки поплавок дёргается', () => {
     const session = new FishingSession({
-      spawns: [{ species: small, rarity: 1 }],
+      zones: [[{ species: small, rarity: 1 }]],
       tackle: TACKLE,
       rng: seededRng(3),
       tuning: { ...DEFAULT_TUNING, biteDelayMin: 6, biteDelayMax: 6 },
     })
     let nibbles = 0
     session.on((e) => e.type === 'nibble' && nibbles++)
-    session.press()
+    tapCast(session)
     runUntil(session, () => session.phase === 'bite')
     expect(nibbles).toBeGreaterThan(0)
   })
 
   it('подсечка до поклёвки спугивает рыбу', () => {
     const { session, events } = makeSession([small])
-    session.press()
+    tapCast(session)
     runUntil(session, () => session.phase === 'waiting')
     session.press()
     expect(escapeReason(events)).toBe('tooEarly')
@@ -86,10 +91,74 @@ describe('FishingSession: до подсечки', () => {
 
   it('без подсечки рыба уходит', () => {
     const { session, events } = makeSession([small])
-    session.press()
+    tapCast(session)
     runUntil(session, () => session.phase === 'bite')
     runUntil(session, () => session.phase !== 'bite')
     expect(escapeReason(events)).toBe('missed')
+  })
+})
+
+describe('FishingSession: дальность заброса', () => {
+  const zoneFish = (i: number): FishSpecies => ({ ...small, id: `zone${i}` })
+  const zones = [0, 1, 2].map((i) => [{ species: zoneFish(i), rarity: 1 }])
+
+  /** Заброс в точку и подсечка; возвращает сессию в бою и событие заброса. */
+  function castAt(castLevels: number, distance: number) {
+    const session = new FishingSession({ zones, tackle: { ...TACKLE, castLevels }, rng: seededRng(1) })
+    const events: FishingEvent[] = []
+    session.on((e) => events.push(e))
+    session.castTo(distance, 0.5)
+    runUntil(session, () => session.phase === 'bite')
+    session.press()
+    const cast = events.find((e) => e.type === 'cast')
+    return { session, cast: cast?.type === 'cast' ? cast : undefined }
+  }
+
+  it('поплавок падает туда, куда нажали, и уровень берётся по дистанции', () => {
+    for (let level = 0; level < 3; level++) {
+      const [from, to] = castLevelRange(level, 3)
+      const { session, cast } = castAt(3, (from + to) / 2)
+      expect(session.cast).toBeCloseTo((from + to) / 2)
+      expect(session.castX).toBe(0.5)
+      expect(cast).toEqual({ type: 'cast', level, clamped: false })
+    }
+  })
+
+  it('ближе берега не бросить', () => {
+    expect(castAt(3, 0).session.cast).toBeCloseTo(DEFAULT_TUNING.castNear)
+  })
+
+  it('слабая удочка кладёт поплавок на свой предел и сообщает об этом', () => {
+    const { session, cast } = castAt(1, DEFAULT_TUNING.castFar)
+    expect(session.cast).toBeCloseTo(castLevelRange(0, 3)[1])
+    expect(cast).toEqual({ type: 'cast', level: 0, clamped: true })
+  })
+
+  it('в водоёме с двумя местами двухуровневая удочка добрасывает до дальнего края, а места шире', () => {
+    const session = new FishingSession({ zones: zones.slice(0, 2), tackle: { ...TACKLE, castLevels: 2 }, rng: seededRng(1) })
+    expect(session.maxCast).toBeCloseTo(DEFAULT_TUNING.castFar)
+    expect(castLevelRange(0, 2)[1] - castLevelRange(0, 2)[0]).toBeGreaterThan(castLevelRange(0, 3)[1] - castLevelRange(0, 3)[0])
+    // Удочка дальнобойнее водоёма бросает до его последнего места — и не дальше
+    const feeder = new FishingSession({ zones: zones.slice(0, 2), tackle: { ...TACKLE, castLevels: 3 }, rng: seededRng(1) })
+    expect(feeder.castLevels).toBe(2)
+    feeder.castTo(DEFAULT_TUNING.castFar)
+    expect(feeder.castLevel).toBe(1)
+  })
+
+  it('нажатие без точки бросает на предел удочки без предупреждения', () => {
+    const session = new FishingSession({ zones, tackle: { ...TACKLE, castLevels: 2 }, rng: seededRng(1) })
+    const events: FishingEvent[] = []
+    session.on((e) => events.push(e))
+    session.press()
+    expect(session.cast).toBeCloseTo(castLevelRange(1, 3)[1])
+    expect(events).toContainEqual({ type: 'cast', level: 1, clamped: false })
+  })
+
+  it('клюёт рыба того уровня, куда упал поплавок', () => {
+    const [near] = castLevelRange(0, 3)
+    expect(castAt(3, near).session.fight!.fish.species.id).toBe('zone0')
+    expect(castAt(2, DEFAULT_TUNING.castFar).session.fight!.fish.species.id).toBe('zone1')
+    expect(castAt(3, DEFAULT_TUNING.castFar).session.fight!.fish.species.id).toBe('zone2')
   })
 })
 
@@ -150,7 +219,7 @@ describe('FishingSession: вываживание', () => {
     // Самые крупные особи обоих видов; палец зажат всё время, считаем от первого касания предела до обрыва
     const secondsToBreak = (species: FishSpecies) => {
       const session = new FishingSession({
-        spawns: [{ species, rarity: 1 }],
+        zones: [[{ species, rarity: 1 }]],
         tackle: TACKLE,
         rng: seededRng(1),
         pickFish: () => makeFish(species, 1),
@@ -196,7 +265,7 @@ describe('FishingSession: вываживание', () => {
     const stronger = { ...TACKLE, lineStrength: 2 }
     hook(session)
     const needBefore = session.fight!.need
-    expect(session.equip([{ species: big, rarity: 1 }], stronger)).toBe(false)
+    expect(session.equip([[{ species: big, rarity: 1 }]], stronger)).toBe(false)
     session.update(DT)
     expect(session.fight!.need).toBeCloseTo(needBefore, 2)
   })

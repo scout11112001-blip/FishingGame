@@ -4,7 +4,7 @@ export const RIVERS_TEXTS: PackTexts = {
   wallet: 'Серебро',
   catchCount: 'Улов',
   hints: {
-    idle: 'Нажми, чтобы забросить',
+    idle: 'Нажми на воду туда, куда забросить',
     casting: '',
     waiting: 'Ждём поклёвку… не торопись',
     bite: 'КЛЮЁТ! Нажми!',
@@ -28,6 +28,11 @@ export const RIVERS_TEXTS: PackTexts = {
   },
   caught: (fish, price) => `Поймал!\n${fish.species.name}, ${fish.weightKg} кг\n+${price} серебра`,
   lost: (fish) => `Сорвалась: ${fish.species.name}, ${fish.weightKg} кг`,
+  cast: {
+    locked: 'Нужна удочка дальнобойнее',
+    tooFar: 'Дальше эта удочка не добросит',
+    zone: (name, depth) => `${name}, глубина ${depth}`,
+  },
   ui: {
     selected: 'Выбрано',
     done: 'Готово',
@@ -36,11 +41,11 @@ export const RIVERS_TEXTS: PackTexts = {
     button: 'Снасти',
     title: 'Снасти',
     tabs: { rod: 'Удочка', line: 'Леска', reel: 'Катушка' },
-    stats: { cast: 'Заброс', strength: 'Прочность', speed: 'Скорость подмотки' },
+    stats: { strength: 'Прочность', speed: 'Скорость подмотки' },
   },
   waters: {
     button: 'Водоём',
     title: 'Водоёмы',
-    fish: 'Водится',
+    zone: (name, depth, fish) => `${name}, глубина ${depth}: ${fish}`,
   },
 }

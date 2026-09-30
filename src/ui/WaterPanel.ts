@@ -1,6 +1,7 @@
-import type { ContentPack, WaterBody } from '../content/types.ts'
+import type { ContentPack, PackTexts, WaterBody } from '../content/types.ts'
 import { card, el } from './dom.ts'
 import { Sheet } from './Sheet.ts'
+import { formatDepth } from './units.ts'
 
 /** Выбор водоёма: описание и кто там водится. Выбор один — после тапа панель закрывается. */
 export class WaterPanel {
@@ -38,9 +39,7 @@ export class WaterPanel {
     for (const water of this.pack.waters) {
       const selected = water.id === this.current.id
       const c = card(water.name, water.description, selected ? t.ui.selected : null, () => this.select(water))
-      const row = el('div', 'sheet-fish')
-      row.append(el('span', 'sheet-fish-label', `${t.waters.fish}: `), fishList(water))
-      c.append(row)
+      for (const line of zoneLines(water, t)) c.append(el('div', 'sheet-fish', line))
       const li = el('li')
       li.append(c)
       this.list.append(li)
@@ -54,10 +53,16 @@ export class WaterPanel {
   }
 }
 
-/** «карась, плотва, окунь, лещ» — от частых к редким. */
-function fishList(water: WaterBody): string {
-  return [...water.spawns]
-    .sort((a, b) => b.rarity - a.rarity)
-    .map((s) => s.species.name.toLocaleLowerCase('ru'))
-    .join(', ')
+/**
+ * По строке на место ловли: «Мелководье у камыша, глубина 1 м: карась, плотва», дальше — только новая рыба: «…: + окунь».
+ * Новую рыбу — от частой к редкой.
+ */
+function zoneLines(water: WaterBody, t: PackTexts): string[] {
+  const seen = new Set<string>()
+  return water.zones.map((zone, i) => {
+    const fresh = [...zone.spawns].sort((a, b) => b.rarity - a.rarity).filter((s) => !seen.has(s.species.id))
+    for (const s of fresh) seen.add(s.species.id)
+    const names = fresh.map((s) => s.species.name.toLocaleLowerCase('ru')).join(', ')
+    return t.waters.zone(zone.name, formatDepth(zone.depthM), i === 0 ? names : `+ ${names}`)
+  })
 }
