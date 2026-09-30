@@ -126,9 +126,9 @@ const LAKE: WaterBody = {
 }
 
 // Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба
-const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1 }
-const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку и озеро — до середины', castLevels: 2 }
-const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к ямам, руслу и омутам', castLevels: 3 }
+const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
+const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку и озеро — до середины', castLevels: 2, sprite: 'sprites/rod-bolognese.webp' }
+const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к ямам, руслу и омутам', castLevels: 3, sprite: 'sprites/rod-feeder.webp' }
 
 const LINE_02: Line = { id: 'mono02', name: 'Леска 0,2 мм', description: 'Для плотвы, карася и окуня', strength: 1 }
 const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3 }
@@ -150,5 +150,10 @@ export const RIVERS: ContentPack = {
   lines: [LINE_02, LINE_03, BRAID, CATFISH_CORD],
   reels: [BASIC_REEL, SPINNING_REEL, MULTIPLIER_REEL, POWER_REEL],
   starter: { rod: BAMBOO, line: LINE_02, reel: BASIC_REEL },
+  art: {
+    float: 'sprites/float.webp',
+    floatAboveWater: 0.3,
+    fish: Object.fromEntries(ALL_FISH.map((f) => [f.id, `sprites/${f.id}.webp`])),
+  },
   texts: RIVERS_TEXTS,
 }

@@ -17,6 +17,18 @@ export interface ContentPack {
   reels: readonly Reel[]
   starter: Loadout
   texts: PackTexts
+  /** Картинки поплавка и рыб. Без них сцена рисует простые фигуры. */
+  art?: PackArt
+}
+
+/** Спрайты пакета — пути относительно public/. Готовит их скрипт npm run sprites из картинок в art/. */
+export interface PackArt {
+  /** Поплавок стоймя, антенна вверху. */
+  float: string
+  /** Какая доля высоты поплавка сверху торчит над водой: антенна и самый верх тела. */
+  floatAboveWater: number
+  /** Рыбы по id вида: вид строго сбоку, голова влево. */
+  fish: Readonly<Record<string, string>>
 }
 
 export interface WaterBody {
@@ -75,6 +87,8 @@ export interface Rod {
   description?: string
   /** 1..MAX_CAST_LEVELS. В водоёме с меньшим числом мест добрасывает до последнего. */
   castLevels: number
+  /** Картинка удочки относительно public/: прямая, вертикальная, рукоять внизу. Без неё удочка — линия. */
+  sprite?: string
 }
 
 /** Леска задаёт прочность: чем выше, тем слабее рывки и ниже зелёная зона. */

@@ -20,6 +20,8 @@ const ROD_SPAN = 0.8
 const CAST_SPAN = 0.9
 /** Сколько секунд висит предупреждение «удочка не добросит». */
 const TOO_FAR_SECONDS = 2.5
+/** Из скольких точек состоит изгибающаяся удочка-картинка. */
+const ROD_POINTS = 24
 
 const COLOR = {
   rod: 0x6b4423,
@@ -39,7 +41,19 @@ type Result = { kind: 'caught'; fish: HookedFish; price: number } | { kind: 'esc
 
 export class FishingScene extends Phaser.Scene {
   private session!: FishingSession
+  /** Слой воды: заливка, места ловли, круги на воде. */
   private gfx!: Phaser.GameObjects.Graphics
+  /** Леска — поверх поплавка и рыбы, под удочкой. */
+  private lineGfx!: Phaser.GameObjects.Graphics
+  /** Интерфейс боя — поверх всего, кроме надписей. */
+  private uiGfx!: Phaser.GameObjects.Graphics
+  private floatImg!: Phaser.GameObjects.Image
+  /** Полупрозрачный поплавок под мышью — куда он упадёт. */
+  private ghostFloat!: Phaser.GameObjects.Image
+  /** Пойманная рыба на экране улова. В бою рыбу не видно — только тёмная тень. */
+  private fishImg!: Phaser.GameObjects.Image
+  /** Удочки-картинки по id; видна только текущая. */
+  private readonly rods = new Map<string, Phaser.GameObjects.Rope>()
   /** Фоновая картинка водоёма; у водоёма без картинки — скрыта, вместо неё заливка из палитры. */
   private bg!: Phaser.GameObjects.Image
   private statusText!: Phaser.GameObjects.Text
@@ -74,6 +88,12 @@ export class FishingScene extends Phaser.Scene {
 
   preload() {
     for (const water of this.pack.waters) if (water.backdrop) this.load.image(backdropKey(water), water.backdrop.image)
+    for (const rod of this.pack.rods) if (rod.sprite) this.load.image(rodKey(rod.id), rod.sprite)
+    const art = this.pack.art
+    if (art) {
+      this.load.image(FLOAT_KEY, art.float)
+      for (const [id, path] of Object.entries(art.fish)) this.load.image(fishKey(id), path)
+    }
   }
 
   create() {
@@ -82,9 +102,20 @@ export class FishingScene extends Phaser.Scene {
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
 
-    // Картинка создаётся первой — она под всем остальным
+    // Порядок создания — порядок слоёв: фон, вода, поплавок и рыба, леска, удочка, интерфейс боя, надписи
     this.bg = this.add.image(0, 0, '__DEFAULT').setOrigin(0)
     this.gfx = this.add.graphics()
+    this.ghostFloat = this.add.image(0, 0, '__DEFAULT').setVisible(false)
+    this.floatImg = this.add.image(0, 0, '__DEFAULT').setVisible(false)
+    this.fishImg = this.add.image(0, 0, '__DEFAULT').setVisible(false)
+    this.lineGfx = this.add.graphics()
+    for (const rod of this.pack.rods) {
+      if (!rod.sprite || !this.textures.exists(rodKey(rod.id))) continue
+      // Вертикальная картинка натягивается на ломаную: первая точка — кончик, последняя — рукоять
+      const points = Array.from({ length: ROD_POINTS }, () => ({ x: 0, y: 0 }))
+      this.rods.set(rod.id, this.add.rope(0, 0, rodKey(rod.id), undefined, points, false).setVisible(false))
+    }
+    this.uiGfx = this.add.graphics()
     const text = () => {
       const t = this.add
         .text(0, 0, '', { fontFamily: 'sans-serif', color: '#ffffff', align: 'center', stroke: '#0b2a3a', strokeThickness: 4 })
@@ -286,6 +317,11 @@ export class FishingScene extends Phaser.Scene {
     this.syncPixelRatio()
     const { w, h } = this.view
     const g = this.gfx.clear()
+    this.lineGfx.clear()
+    this.uiGfx.clear()
+    this.floatImg.setVisible(false)
+    this.ghostFloat.setVisible(false)
+    this.fishImg.setVisible(false)
     const s = this.session
     const phase = s.phase
     const fight = phase === 'fighting' ? s.fight : null
@@ -311,11 +347,12 @@ export class FishingScene extends Phaser.Scene {
     this.zoneTexts.forEach((t, i) => t.setVisible(idle && i < this.water.zones.length))
     if (idle) this.drawZones(w, h, fontSize)
 
-    // Удочка наклоняется туда, куда отведён палец, и гнётся от усилия
+    // Удочка наклоняется туда, куда отведён палец, и гнётся от усилия.
+    // Рукоять чуть ниже края экрана — видна только её верхняя часть, как у удочки в руках.
     const rodX = fight?.rodX ?? 0
     const bend = fight ? Math.min(fight.effort, 1.2) * h * 0.04 : 0
-    const butt = { x: w * 0.5 + rodX * w * 0.1, y: h + 10 }
-    const tip = { x: w * 0.5 + rodX * w * 0.28, y: h * 0.74 + bend }
+    const butt = { x: w * 0.5 + rodX * w * 0.1, y: h * 1.06 }
+    const tip = { x: w * 0.5 + rodX * w * 0.28, y: h * 0.72 + bend }
 
     // Поплавок или рыба на конце лески
     let end: { x: number; y: number } | null = null
@@ -328,14 +365,16 @@ export class FishingScene extends Phaser.Scene {
         x: Phaser.Math.Linear(tip.x, castTarget.x, p),
         y: Phaser.Math.Linear(tip.y, castTarget.y, p) - Math.sin(p * Math.PI) * h * 0.25,
       }
-      this.drawFloat(end.x, end.y, floatR, 0)
+      // В полёте поплавок виден целиком
+      this.placeFloat(this.floatImg, end.x, end.y, floatR, 0, true)
     } else if (phase === 'waiting') {
-      const dip = 8 * Math.exp(-this.nibbleAge * 10) * perspective(s.cast)
-      end = { x: castTarget.x, y: castTarget.y + Math.sin(this.elapsed * 3) * 1.5 + dip }
-      this.drawFloat(end.x, end.y, floatR, 0)
+      // Поклёвка-«тычок» притапливает поплавок, а волна его качает
+      const dip = Math.exp(-this.nibbleAge * 10) * 0.45
+      end = { x: castTarget.x, y: castTarget.y + Math.sin(this.elapsed * 3) * 1.5 }
+      this.placeFloat(this.floatImg, end.x, end.y, floatR, dip)
     } else if (phase === 'bite') {
-      end = { x: castTarget.x, y: castTarget.y + floatR * 1.2 }
-      this.drawFloat(end.x, end.y, floatR, 0.6)
+      end = { x: castTarget.x, y: castTarget.y }
+      this.placeFloat(this.floatImg, end.x, end.y, floatR, 0.75)
       const ring = 1 - s.hookWindowLeft
       g.lineStyle(3, COLOR.white, 1 - ring).strokeCircle(end.x, end.y, floatR * (1.5 + ring * 4))
     } else if (fight) {
@@ -345,6 +384,7 @@ export class FishingScene extends Phaser.Scene {
       // Рыба клюнула там, где лежал поплавок, и по мере подмотки подходит к удочке
       const offset = (castToX(s.castX) - w / 2) * Math.min(fight.distance / s.cast, 1)
       end = { x: w * 0.5 + offset + fight.fishX * w * 0.38 + shake, y: distToY(fight.distance) }
+      // Какая рыба на крючке — не видно, пока не вытащишь: в воде только тёмная тень
       g.fillStyle(COLOR.fish, 0.85).fillEllipse(end.x, end.y, w * 0.09 * k, w * 0.035 * k)
       if (fight.mode === 'rush') {
         g.lineStyle(2, COLOR.white, 0.7).strokeCircle(end.x, end.y, w * 0.05 * k * (1 + ((this.elapsed * 3) % 1)))
@@ -353,11 +393,11 @@ export class FishingScene extends Phaser.Scene {
 
     if (end) {
       const color = fight ? effortColor(fight) : COLOR.line
-      g.lineStyle(2, color, 0.9).lineBetween(tip.x, tip.y, end.x, end.y)
+      this.lineGfx.lineStyle(2, color, 0.9).lineBetween(tip.x, tip.y, end.x, end.y)
     }
 
     // Удочка — ближе всего к игроку, поэтому поверх воды, рыбы и лески (но под интерфейсом боя)
-    g.lineStyle(Math.max(4, w * 0.008), COLOR.rod).lineBetween(butt.x, butt.y, tip.x, tip.y)
+    this.drawRod(butt, tip, end, bend, w, h)
 
     // Интерфейс
     this.walletText
@@ -391,11 +431,7 @@ export class FishingScene extends Phaser.Scene {
     this.resultText.setVisible(!!this.result)
     if (this.result) {
       this.resultText.setWordWrapWidth(w * 0.9).setFontSize(fontSize * 1.1).setPosition(w / 2, h * 0.58).setText(resultMessage(this.result, this.texts))
-      if (this.result.kind === 'caught') {
-        const len = Phaser.Math.Clamp(w * 0.08 * Math.cbrt(this.result.fish.weightKg) * 1.5, w * 0.06, w * 0.5)
-        g.fillStyle(COLOR.fish).fillEllipse(w / 2, h * 0.45, len, len * 0.4)
-        g.fillTriangle(w / 2 + len * 0.45, h * 0.45, w / 2 + len * 0.7, h * 0.45 - len * 0.18, w / 2 + len * 0.7, h * 0.45 + len * 0.18)
-      }
+      if (this.result.kind === 'caught') this.drawCaughtFish(this.result.fish, w, h)
     }
   }
 
@@ -437,7 +473,7 @@ export class FishingScene extends Phaser.Scene {
 
     if (landing !== null) {
       const r = Math.max(6, w * 0.012) * perspective(landing)
-      this.drawFloat(castToX((px - w / 2) / ((w * CAST_SPAN) / 2)), distToY(landing), r, 0.6)
+      this.placeFloat(this.ghostFloat, castToX((px - w / 2) / ((w * CAST_SPAN) / 2)), distToY(landing), r, 0, false, 0.55)
     }
   }
 
@@ -453,7 +489,7 @@ export class FishingScene extends Phaser.Scene {
    * Снизу вверх: серая зона — мало (рыба сойдёт), зелёная — нормально, красная — леска на пределе.
    */
   private drawEffortBar(fight: FightView, w: number, h: number, horizon: number, fontSize: number) {
-    const g = this.gfx
+    const g = this.uiGfx
     const { top: stripTop } = this.rodStrip(w, h)
     const barW = Phaser.Math.Clamp(w * 0.06, 22, 34)
     const barH = Phaser.Math.Clamp(h * 0.28, 120, 280)
@@ -501,7 +537,7 @@ export class FishingScene extends Phaser.Scene {
 
   /** Полоса управления внизу: прямоугольник — куда поставить палец (зеркально рыбе), пятно — где палец сейчас. */
   private drawRodControl(fight: FightView, w: number, h: number) {
-    const g = this.gfx
+    const g = this.uiGfx
     const { spot, y, cx, half, top: stripTop } = this.rodStrip(w, h)
 
     g.fillStyle(COLOR.panel, 0.35).fillRoundedRect(cx - half - spot, stripTop, half * 2 + spot * 2, spot * 2 + 12, spot + 6)
@@ -531,11 +567,105 @@ export class FishingScene extends Phaser.Scene {
     g.lineStyle(2, COLOR.white, fight.holding ? 0.6 : 0.3).strokeCircle(sx, y, r)
   }
 
-  private drawFloat(x: number, y: number, r: number, sunk: number) {
-    // sunk: 0 — поплавок на воде, 1 — полностью утонул
-    this.gfx.fillStyle(COLOR.floatBottom, 1 - sunk).fillCircle(x, y + r * 0.4, r * 0.8)
-    this.gfx.fillStyle(COLOR.floatTop, 1 - sunk * 0.5).fillCircle(x, y - r * 0.3, r)
+  /**
+   * Поплавок на воде в точке (x, waterY). Над водой торчит верхняя часть картинки — антенна и верх тела;
+   * sunk 0..1 — насколько он притоплен (при поклёвке уходит вниз, остаётся кончик антенны).
+   * whole — показать целиком, в полёте. r — масштаб, общий с запасным рисунком без картинки.
+   */
+  private placeFloat(img: Phaser.GameObjects.Image, x: number, waterY: number, r: number, sunk: number, whole = false, alpha = 1) {
+    const art = this.pack.art
+    if (!art || !this.textures.exists(FLOAT_KEY)) {
+      // Без картинки — два кружка, как раньше
+      const g = this.gfx
+      g.fillStyle(COLOR.floatBottom, (1 - sunk) * alpha).fillCircle(x, waterY + r * 0.4, r * 0.8)
+      g.fillStyle(COLOR.floatTop, (1 - sunk * 0.5) * alpha).fillCircle(x, waterY - r * 0.3, r)
+      return
+    }
+    if (img.texture.key !== FLOAT_KEY) img.setTexture(FLOAT_KEY)
+    const frame = img.frame
+    // Торчащая часть — примерно 4.5 радиуса старого кружка: антенна должна читаться и вдали
+    const scale = (r * 4.5) / (frame.height * art.floatAboveWater)
+    img.setVisible(true).setAlpha(alpha).setScale(scale).setPosition(x, waterY)
+    if (whole) {
+      img.setCrop().setOrigin(0.5, 0.5)
+      return
+    }
+    // Видимая доля картинки сверху; точка (x, waterY) — там, где поплавок входит в воду
+    const visible = art.floatAboveWater * (1 - 0.85 * Phaser.Math.Clamp(sunk, 0, 1))
+    img.setCrop(0, 0, frame.width, frame.height * visible).setOrigin(0.5, visible)
   }
+
+  /** Пойманная рыба на экране улова: крупнее вес — длиннее рыба, но в пределах экрана. */
+  private drawCaughtFish(fish: HookedFish, w: number, h: number) {
+    const key = fishKey(fish.species.id)
+    const len = w * Phaser.Math.Clamp(0.18 + 0.17 * Math.cbrt(fish.weightKg), 0.25, 0.85)
+    if (!this.textures.exists(key)) {
+      const g = this.gfx
+      g.fillStyle(COLOR.fish).fillEllipse(w / 2, h * 0.45, len, len * 0.4)
+      g.fillTriangle(w / 2 + len * 0.45, h * 0.45, w / 2 + len * 0.7, h * 0.45 - len * 0.18, w / 2 + len * 0.7, h * 0.45 + len * 0.18)
+      return
+    }
+    if (this.fishImg.texture.key !== key) this.fishImg.setTexture(key)
+    const frame = this.fishImg.frame
+    // Высокую рыбу (карась, лещ) ограничиваем и по высоте, чтобы не наехала на надпись
+    const width = Math.min(len, (h * 0.28 * frame.width) / frame.height)
+    this.fishImg
+      .setVisible(true)
+      .setCrop()
+      .setOrigin(0.5)
+      .setDisplaySize(width, (width * frame.height) / frame.width)
+      .setPosition(w / 2, h * 0.42)
+  }
+
+  /**
+   * Удочка от рукояти до кончика. Картинка натянута на кривую: под усилием удилище выгибается к рыбе.
+   * Без картинки — прямая линия, как раньше.
+   */
+  private drawRod(butt: Point, tip: Point, end: Point | null, bend: number, w: number, h: number) {
+    const current = this.rods.get(this.loadout.rod.id)
+    for (const rope of this.rods.values()) rope.setVisible(rope === current)
+    if (!current) {
+      this.lineGfx.lineStyle(Math.max(4, w * 0.008), COLOR.rod).lineBetween(butt.x, butt.y, tip.x, tip.y)
+      return
+    }
+    // Изгиб — квадратичная кривая: контрольная точка в середине, смещённая поперёк удочки в сторону лески
+    const mx = (butt.x + tip.x) / 2
+    const my = (butt.y + tip.y) / 2
+    const len = Math.hypot(tip.x - butt.x, tip.y - butt.y)
+    let nx = -(tip.y - butt.y) / len
+    let ny = (tip.x - butt.x) / len
+    if (end && (end.x - mx) * nx + (end.y - my) * ny < 0) {
+      nx = -nx
+      ny = -ny
+    }
+    const cx = mx + nx * bend * 1.5
+    const cy = my + ny * bend * 1.5
+    // Толщина — масштабом всей верёвки; точки задаём в её собственных координатах
+    const scale = Phaser.Math.Clamp(h / 900, 0.5, 1.1)
+    current.setScale(scale)
+    const points = current.points
+    for (let i = 0; i < points.length; i++) {
+      const t = 1 - i / (points.length - 1)
+      const a = (1 - t) * (1 - t)
+      const b = 2 * (1 - t) * t
+      const c = t * t
+      points[i].x = (a * butt.x + b * cx + c * tip.x) / scale
+      points[i].y = (a * butt.y + b * cy + c * tip.y) / scale
+    }
+    current.setDirty()
+  }
+}
+
+type Point = { x: number; y: number }
+
+const FLOAT_KEY = 'float'
+
+function fishKey(speciesId: string): string {
+  return `fish-${speciesId}`
+}
+
+function rodKey(rodId: string): string {
+  return `rod-${rodId}`
 }
 
 function backdropKey(water: WaterBody): string {
