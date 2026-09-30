@@ -1,0 +1,361 @@
+import Phaser from 'phaser'
+import type { HookedFish } from '../core/fish.ts'
+import { FishingSession, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
+import { ACTIVE_PACK } from '../content/index.ts'
+import { tackleOf, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { Hud } from '../ui/Hud.ts'
+import { TacklePanel } from '../ui/TacklePanel.ts'
+import { WaterPanel } from '../ui/WaterPanel.ts'
+import { toMeters } from '../ui/units.ts'
+
+/** Дальняя граница отрисовки воды в единицах дистанции (равна длине лески). */
+const MAX_DRAW_DISTANCE = 1.5
+/** Итог нельзя закрыть сразу, чтобы игрок, жмущий кнопку, успел его прочитать. */
+const RESULT_MIN_SECONDS = 0.6
+/** Какая доля ширины экрана соответствует полному отведению пальца (-1..1). */
+const ROD_SPAN = 0.8
+
+const COLOR = {
+  rod: 0x6b4423,
+  line: 0xf5f5f5,
+  floatTop: 0xe53935,
+  floatBottom: 0xffffff,
+  fish: 0x0d3b52,
+  panel: 0x0b2a3a,
+  slack: 0x607d8b,
+  ok: 0x4caf50,
+  warn: 0xffc107,
+  danger: 0xf44336,
+  white: 0xffffff,
+}
+
+type Result = { kind: 'caught'; fish: HookedFish; price: number } | { kind: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
+
+export class FishingScene extends Phaser.Scene {
+  private session!: FishingSession
+  private gfx!: Phaser.GameObjects.Graphics
+  private statusText!: Phaser.GameObjects.Text
+  private walletText!: Phaser.GameObjects.Text
+  private fightText!: Phaser.GameObjects.Text
+  private resultText!: Phaser.GameObjects.Text
+  private keyLeft?: Phaser.Input.Keyboard.Key
+  private keyRight?: Phaser.Input.Keyboard.Key
+  private hud!: Hud
+  private tacklePanel!: TacklePanel
+  private waterPanel!: WaterPanel
+
+  private readonly pack: ContentPack = ACTIVE_PACK
+  private water: WaterBody = this.pack.waters[0]
+  private loadout: Loadout = this.pack.starter
+
+  private silver = 0
+  private catches = 0
+  private elapsed = 0
+  private nibbleAge = Infinity
+  private result: Result | null = null
+
+  constructor() {
+    super('FishingScene')
+  }
+
+  create() {
+    this.session = new FishingSession({ spawns: this.water.spawns, tackle: tackleOf(this.loadout) })
+    this.session.on((e) => this.onEvent(e))
+    // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
+    if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
+
+    this.gfx = this.add.graphics()
+    const text = () =>
+      this.add.text(0, 0, '', { fontFamily: 'sans-serif', color: '#ffffff', align: 'center', stroke: '#0b2a3a', strokeThickness: 4 }).setOrigin(0.5)
+    this.statusText = text()
+    this.fightText = text()
+    this.resultText = text()
+    this.walletText = text().setOrigin(0, 0).setAlign('left')
+
+    // Интерфейс вне боя — HTML поверх игры: кнопки внизу и панели выбора
+    this.tacklePanel = new TacklePanel(this.pack, this.loadout, (loadout) => {
+      this.loadout = loadout
+      this.session.equip(this.water.spawns, tackleOf(loadout))
+    })
+    this.waterPanel = new WaterPanel(this.pack, this.water, (water) => {
+      this.water = water
+      this.session.equip(water.spawns, tackleOf(this.loadout))
+    })
+    this.hud = new Hud()
+    this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
+    this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.hud.destroy()
+      this.tacklePanel.destroy()
+      this.waterPanel.destroy()
+    })
+
+    this.input.mouse?.disableContextMenu()
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      this.aimRod(p)
+      this.press()
+    })
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => p.isDown && this.aimRod(p))
+    this.input.on('pointerup', () => this.session.release())
+    this.input.on('pointerupoutside', () => this.session.release())
+    // На ПК: пробел — усилие, стрелки — отвести удочку
+    const kb = this.input.keyboard
+    kb?.on('keydown-SPACE', (e: KeyboardEvent) => !e.repeat && this.press())
+    kb?.on('keyup-SPACE', () => this.session.release())
+    this.keyLeft = kb?.addKey('LEFT')
+    this.keyRight = kb?.addKey('RIGHT')
+    // Ушли из вкладки с зажатым пальцем — отпускаем, иначе вернёмся к порванной леске
+    this.game.events.on('blur', () => this.session.release())
+    this.game.events.on('hidden', () => this.session.release())
+  }
+
+  update(_time: number, deltaMs: number) {
+    const dt = deltaMs / 1000
+    this.elapsed += dt
+    this.nibbleAge += dt
+    this.steerWithKeys(dt)
+    this.session.update(dt)
+    this.draw()
+  }
+
+  private get texts(): PackTexts {
+    return this.pack.texts
+  }
+
+  private aimRod(p: Phaser.Input.Pointer) {
+    const w = this.scale.width
+    this.session.setRod((p.x - w / 2) / ((w * ROD_SPAN) / 2))
+  }
+
+  private steerWithKeys(dt: number) {
+    const fight = this.session.fight
+    const left = this.keyLeft?.isDown ?? false
+    const right = this.keyRight?.isDown ?? false
+    if (fight && left !== right) this.session.setRod(fight.rodX + (right ? 1 : -1) * 2.5 * dt)
+  }
+
+  private press() {
+    // Пока открыта панель, пробел не должен забрасывать удочку у неё за спиной
+    if (this.tacklePanel.isOpen || this.waterPanel.isOpen) return
+    const phase = this.session.phase
+    if ((phase === 'caught' || phase === 'escaped') && this.session.timeInPhase < RESULT_MIN_SECONDS) return
+    this.session.press()
+  }
+
+  private onEvent(e: FishingEvent) {
+    switch (e.type) {
+      case 'nibble':
+        this.nibbleAge = 0
+        break
+      case 'caught':
+        this.silver += e.price
+        this.catches++
+        this.result = { kind: 'caught', fish: e.fish, price: e.price }
+        break
+      case 'escaped':
+        this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
+        break
+      case 'phase':
+        if (e.phase === 'idle') this.result = null
+        break
+    }
+  }
+
+  private draw() {
+    const { width: w, height: h } = this.scale
+    const g = this.gfx.clear()
+    const s = this.session
+    const phase = s.phase
+    const fight = phase === 'fighting' ? s.fight : null
+    const fontSize = Phaser.Math.Clamp(Math.min(w, h) / 22, 14, 30)
+
+    // Сцена: небо, вода
+    const horizon = h * 0.3
+    const palette = this.water.palette
+    g.fillStyle(palette.sky).fillRect(0, 0, w, horizon)
+    g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.12)
+    g.fillStyle(palette.water).fillRect(0, horizon + h * 0.12, w, h - horizon)
+
+    const nearY = h * 0.84
+    const farY = horizon + h * 0.03
+    const distToY = (d: number) => nearY + (farY - nearY) * Phaser.Math.Clamp(d / MAX_DRAW_DISTANCE, 0, 1)
+    const perspective = (d: number) => 1 - 0.5 * Phaser.Math.Clamp(d / MAX_DRAW_DISTANCE, 0, 1)
+
+    // Удочка наклоняется туда, куда отведён палец, и гнётся от усилия
+    const rodX = fight?.rodX ?? 0
+    const bend = fight ? Math.min(fight.effort, 1.2) * h * 0.04 : 0
+    const butt = { x: w * 0.5 + rodX * w * 0.1, y: h + 10 }
+    const tip = { x: w * 0.5 + rodX * w * 0.28, y: h * 0.74 + bend }
+
+    // Поплавок или рыба на конце лески
+    let end: { x: number; y: number } | null = null
+    const castTarget = { x: w * 0.5 + Math.sin(this.elapsed * 0.7) * w * 0.01, y: distToY(s.cast) }
+    const floatR = Math.max(6, w * 0.012) * perspective(s.cast)
+
+    if (phase === 'casting') {
+      const p = s.castProgress
+      end = {
+        x: Phaser.Math.Linear(tip.x, castTarget.x, p),
+        y: Phaser.Math.Linear(tip.y, castTarget.y, p) - Math.sin(p * Math.PI) * h * 0.25,
+      }
+      this.drawFloat(end.x, end.y, floatR, 0)
+    } else if (phase === 'waiting') {
+      const dip = 8 * Math.exp(-this.nibbleAge * 10) * perspective(s.cast)
+      end = { x: castTarget.x, y: castTarget.y + Math.sin(this.elapsed * 3) * 1.5 + dip }
+      this.drawFloat(end.x, end.y, floatR, 0)
+    } else if (phase === 'bite') {
+      end = { x: castTarget.x, y: castTarget.y + floatR * 1.2 }
+      this.drawFloat(end.x, end.y, floatR, 0.6)
+      const ring = 1 - s.hookWindowLeft
+      g.lineStyle(3, COLOR.white, 1 - ring).strokeCircle(end.x, end.y, floatR * (1.5 + ring * 4))
+    } else if (fight) {
+      const k = perspective(fight.distance)
+      // Перед рывком тень рыбы дрожит — это подсказка «сейчас рванёт»
+      const shake = fight.mode === 'warn' ? Math.sin(this.elapsed * 60) * w * 0.006 : 0
+      end = { x: w * 0.5 + fight.fishX * w * 0.38 + shake, y: distToY(fight.distance) }
+      g.fillStyle(COLOR.fish, 0.85).fillEllipse(end.x, end.y, w * 0.09 * k, w * 0.035 * k)
+      if (fight.mode === 'rush') {
+        g.lineStyle(2, COLOR.white, 0.7).strokeCircle(end.x, end.y, w * 0.05 * k * (1 + ((this.elapsed * 3) % 1)))
+      }
+    }
+
+    if (end) {
+      const color = fight ? effortColor(fight) : COLOR.line
+      g.lineStyle(2, color, 0.9).lineBetween(tip.x, tip.y, end.x, end.y)
+    }
+
+    // Удочка — ближе всего к игроку, поэтому поверх воды, рыбы и лески (но под интерфейсом боя)
+    g.lineStyle(Math.max(4, w * 0.008), COLOR.rod).lineBetween(butt.x, butt.y, tip.x, tip.y)
+
+    // Интерфейс
+    this.walletText
+      .setFontSize(fontSize * 0.8)
+      .setPosition(12, 10)
+      .setText(`${this.texts.wallet}: ${this.silver}   ${this.texts.catchCount}: ${this.catches}`)
+    const idle = phase === 'idle'
+    this.hud.setVisible(idle)
+    this.statusText
+      .setWordWrapWidth(w * 0.9)
+      .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
+      .setPosition(w / 2, horizon * 0.3)
+      .setText(this.texts.hints[phase])
+
+    this.fightText.setVisible(!!fight)
+    if (fight) {
+      this.drawEffortBar(fight, w, h, horizon, fontSize)
+      this.drawRodControl(fight, w, h)
+    }
+
+    this.resultText.setVisible(!!this.result)
+    if (this.result) {
+      this.resultText.setWordWrapWidth(w * 0.9).setFontSize(fontSize * 1.1).setPosition(w / 2, h * 0.58).setText(resultMessage(this.result, this.texts))
+      if (this.result.kind === 'caught') {
+        const len = Phaser.Math.Clamp(w * 0.08 * Math.cbrt(this.result.fish.weightKg) * 1.5, w * 0.06, w * 0.5)
+        g.fillStyle(COLOR.fish).fillEllipse(w / 2, h * 0.45, len, len * 0.4)
+        g.fillTriangle(w / 2 + len * 0.45, h * 0.45, w / 2 + len * 0.7, h * 0.45 - len * 0.18, w / 2 + len * 0.7, h * 0.45 + len * 0.18)
+      }
+    }
+  }
+
+  /**
+   * Вертикальная шкала усилия у левого края, прямо над полосой для пальца — рядом с ним, чтобы не переводить взгляд.
+   * Снизу вверх: серая зона — мало (рыба сойдёт), зелёная — нормально, красная — леска на пределе.
+   */
+  private drawEffortBar(fight: FightView, w: number, h: number, horizon: number, fontSize: number) {
+    const g = this.gfx
+    const { top: stripTop } = this.rodStrip(w, h)
+    const barW = Phaser.Math.Clamp(w * 0.06, 22, 34)
+    const barH = Phaser.Math.Clamp(h * 0.28, 120, 280)
+    const x = 12
+    const bottom = stripTop - 10
+    const y = bottom - barH
+    // Доля шкалы → экранная Y: 0 внизу, 1 наверху
+    const at = (v: number) => bottom - barH * Phaser.Math.Clamp(v, 0, 1)
+
+    g.fillStyle(COLOR.slack, 0.9).fillRect(x, at(fight.need), barW, bottom - at(fight.need))
+    g.fillStyle(COLOR.ok, 0.9).fillRect(x, at(fight.zoneTop), barW, at(fight.need) - at(fight.zoneTop))
+    g.fillStyle(COLOR.danger, 0.9).fillRect(x, y, barW, at(fight.zoneTop) - y)
+
+    // Бегунок текущего усилия
+    g.fillStyle(COLOR.white).fillRect(x - 5, at(fight.effort) - 3, barW + 10, 6)
+
+    const blink = Math.sin(this.elapsed * 30) > 0
+    const border = fight.breakDanger > 0 && blink ? COLOR.danger : fight.slackDanger > 0.3 && blink ? COLOR.warn : COLOR.panel
+    g.lineStyle(3, border).strokeRect(x, y, barW, barH)
+
+    const meters = toMeters(fight.distance)
+    const say = this.texts.warnings
+    const warning =
+      fight.breakDanger > 0
+        ? say.lineBreaking
+        : fight.slackDanger > 0.3
+          ? say.slack
+          : fight.sideDanger > 0.3
+            ? say.wrongSide
+            : fight.mode === 'warn'
+              ? say.rushSoon
+              : ''
+    this.fightText
+      .setFontSize(fontSize * 0.85)
+      .setPosition(w / 2, horizon * 0.62)
+      .setText(warning ? `${meters} м — ${warning}` : `${meters} м`)
+  }
+
+  /** Геометрия полосы для пальца — общая для её отрисовки и для шкалы усилия над ней. */
+  private rodStrip(w: number, h: number) {
+    const spot = Phaser.Math.Clamp(w * 0.1, 34, 60)
+    const y = h - spot - 12
+    return { spot, y, cx: w / 2, half: (w * ROD_SPAN) / 2, top: y - spot - 6 }
+  }
+
+  /** Полоса управления внизу: прямоугольник — куда поставить палец (зеркально рыбе), пятно — где палец сейчас. */
+  private drawRodControl(fight: FightView, w: number, h: number) {
+    const g = this.gfx
+    const { spot, y, cx, half, top: stripTop } = this.rodStrip(w, h)
+
+    g.fillStyle(COLOR.panel, 0.35).fillRoundedRect(cx - half - spot, stripTop, half * 2 + spot * 2, spot * 2 + 12, spot + 6)
+    g.lineStyle(3, COLOR.white, 0.35).lineBetween(cx - half, y, cx + half, y)
+
+    // Цель: вся зона, где срыв вбок не копится, и яркая середина — идеальное положение пальца.
+    // Обрезаем по краям полосы, куда палец всё равно не дотянется.
+    const toScreen = (x: number) => cx + Phaser.Math.Clamp(x, -1, 1) * half
+    const left = toScreen(fight.targetX - fight.safeHalfWidth)
+    const right = toScreen(fight.targetX + fight.safeHalfWidth)
+    const top = y - spot
+    const height = spot * 2
+    g.fillStyle(COLOR.ok, 0.22).fillRoundedRect(left, top, right - left, height, 10)
+    const core = Math.min(spot * 0.6, (right - left) / 2)
+    g.fillStyle(COLOR.ok, 0.35).fillRect(toScreen(fight.targetX) - core / 2, top, core, height)
+    const alarm = fight.sideDanger > 0.3 && Math.sin(this.elapsed * 20) > 0
+    g.lineStyle(3, alarm ? COLOR.danger : COLOR.white, alarm ? 0.9 : 0.5).strokeRoundedRect(left, top, right - left, height, 10)
+
+    // Пятно под пальцем: слои с растущей плотностью к центру дают мягкий край.
+    // Цвет — качество противодействия; при угрозе срыва вбок пятно пульсирует красным.
+    const sideAlarm = fight.sideDanger > 0.3 && Math.sin(this.elapsed * 20) > 0
+    const color = sideAlarm ? COLOR.danger : fight.counter > 0.7 ? COLOR.ok : fight.counter > 0.4 ? COLOR.warn : COLOR.danger
+    const r = spot * (fight.holding ? 1.1 : 0.9)
+    const alpha = fight.holding ? 0.16 : 0.09
+    const sx = cx + fight.rodX * half
+    for (let i = 0; i < 6; i++) g.fillStyle(color, alpha).fillCircle(sx, y, r * (1 - i * 0.14))
+    g.lineStyle(2, COLOR.white, fight.holding ? 0.6 : 0.3).strokeCircle(sx, y, r)
+  }
+
+  private drawFloat(x: number, y: number, r: number, sunk: number) {
+    // sunk: 0 — поплавок на воде, 1 — полностью утонул
+    this.gfx.fillStyle(COLOR.floatBottom, 1 - sunk).fillCircle(x, y + r * 0.4, r * 0.8)
+    this.gfx.fillStyle(COLOR.floatTop, 1 - sunk * 0.5).fillCircle(x, y - r * 0.3, r)
+  }
+}
+
+function effortColor(f: FightView): number {
+  if (f.effort >= f.zoneTop) return COLOR.danger
+  if (f.effort < f.need) return COLOR.slack
+  return COLOR.ok
+}
+
+function resultMessage(r: Result, texts: PackTexts): string {
+  if (r.kind === 'caught') return texts.caught(r.fish, r.price)
+  // Сорвавшуюся рыбу показываем, только если она успела клюнуть — это стимул закинуть снова
+  const lost = r.fish && r.reason !== 'tooEarly' ? '\n' + texts.lost(r.fish) : ''
+  return texts.escape[r.reason] + lost
+}

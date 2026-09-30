@@ -1,0 +1,256 @@
+:root {
+  --ui-bg: #10364a;
+  --ui-panel: rgba(11, 42, 58, 0.78);
+  --ui-text: #ffffff;
+  --ui-muted: rgba(255, 255, 255, 0.72);
+  --ui-card: rgba(255, 255, 255, 0.07);
+  --ui-accent: #2d86b0;
+  --ui-ok: #4caf50;
+  --ui-stat: #ffc107;
+  --ui-font: sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b2a3a;
+  /* Запрещаем браузеру скроллить, зумить и выделять текст при тапах по игре */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#game {
+  width: 100%;
+  height: 100%;
+}
+
+/* Кнопки интерфейса поверх игры */
+.hud-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  /* Пустое место полосы не должно перехватывать тапы у игры */
+  pointer-events: none;
+}
+
+.hud-bar[hidden] {
+  display: none;
+}
+
+.hud-button {
+  pointer-events: auto;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 24px;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font: 600 17px var(--ui-font);
+  cursor: pointer;
+}
+
+/* Модальные панели (снасти, водоёмы): снизу на телефоне, по центру на широком экране */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.sheet-backdrop[hidden] {
+  display: none;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  /* Фиксированная высота: панель не прыгает при переключении вкладок с разным числом предметов */
+  height: min(82vh, 640px);
+  box-sizing: border-box;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+}
+
+@media (min-width: 700px) and (min-height: 500px) {
+  .sheet-backdrop {
+    align-items: center;
+  }
+  .sheet {
+    border-radius: 18px;
+  }
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.sheet-close {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--ui-muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.sheet-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sheet-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.sheet-tab {
+  min-height: 44px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ui-card);
+  color: var(--ui-muted);
+  font: 600 15px var(--ui-font);
+  cursor: pointer;
+}
+
+.sheet-tab.active {
+  background: var(--ui-accent);
+  color: var(--ui-text);
+}
+
+.sheet-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  /* Внутри панели прокрутка нужна, хотя на body она запрещена */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+.sheet-card {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 14px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--ui-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-card.selected {
+  border-color: var(--ui-ok);
+  background: rgba(76, 175, 80, 0.16);
+}
+
+.sheet-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sheet-card-name {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sheet-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--ui-ok);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sheet-card-desc {
+  margin-top: 4px;
+  color: var(--ui-muted);
+  font-size: 14px;
+}
+
+.sheet-stat {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: var(--ui-muted);
+  font-size: 13px;
+}
+
+.sheet-stat-value {
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.sheet-bar {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.sheet-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ui-stat);
+}
+
+.sheet-done {
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: var(--ui-ok);
+  color: var(--ui-text);
+  font: 600 17px var(--ui-font);
+  cursor: pointer;
+}
+
+.sheet-fish {
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+.sheet-fish-label {
+  color: var(--ui-muted);
+}
