@@ -41,7 +41,7 @@ const POND: WaterBody = {
   ],
   palette: { sky: 0x9fd8ea, waterFar: 0x3d8f7a, water: 0x2f6f5e },
   // Мелководье — где камыш и кувшинки, яма — ровная вода над ними
-  backdrop: { image: 'bg/pond.jpg', waterline: 0.25, shore: 0.88, zoneEdges: [0.72, 0.5, 0.3] },
+  backdrop: { image: 'bg/pond.webp', waterline: 0.25, shore: 0.88, zoneEdges: [0.72, 0.5, 0.3] },
 }
 
 const RIVER: WaterBody = {
@@ -82,7 +82,7 @@ const RIVER: WaterBody = {
   ],
   palette: { sky: 0x7ec8e3, waterFar: 0x2d86b0, water: 0x1f6f99 },
   // У берега — галька под водой, бровка — зеленоватая кромка травы, русло — тёмная вода с омутом
-  backdrop: { image: 'bg/river.jpg', waterline: 0.245, shore: 0.9, zoneEdges: [0.76, 0.64, 0.52, 0.31] },
+  backdrop: { image: 'bg/river.webp', waterline: 0.245, shore: 0.9, zoneEdges: [0.76, 0.64, 0.52, 0.31] },
 }
 
 const LAKE: WaterBody = {
@@ -122,7 +122,7 @@ const LAKE: WaterBody = {
   ],
   palette: { sky: 0xa9c4d6, waterFar: 0x2a5d7c, water: 0x1b4560 },
   // Заросли — светлая отмель между камышами, свал — край тёмного клина, яма — глубокая вода за ним
-  backdrop: { image: 'bg/lake.jpg', waterline: 0.235, shore: 0.87, zoneEdges: [0.76, 0.62, 0.5, 0.3] },
+  backdrop: { image: 'bg/lake.webp', waterline: 0.235, shore: 0.87, zoneEdges: [0.76, 0.62, 0.5, 0.3] },
 }
 
 // Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба

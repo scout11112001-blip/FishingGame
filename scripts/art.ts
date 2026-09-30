@@ -1,8 +1,44 @@
-// Готовит спрайты для игры из картинок нейросети: вырезает однотонный фон, обрезает пустые поля,
-// уменьшает и сохраняет в WebP с прозрачностью. Исходники — art/sprites, результат — public/sprites.
-// Запуск: npm run sprites
-import { mkdirSync } from 'node:fs'
+// Готовит картинки для игры из картинок нейросети. Запуск: npm run art
+// - Фоны водоёмов (art/bg → public/bg): увеличивает нейросетью Real-ESRGAN — исходники нейросети мелкие
+//   и мыльные, — уменьшает до нужного размера и сохраняет в WebP. Без апскейлера в tools/ — просто перекодирует.
+// - Спрайты (art/sprites → public/sprites): вырезает однотонный фон, обрезает пустые поля,
+//   уменьшает и сохраняет в WebP с прозрачностью.
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import sharp from 'sharp'
+
+/** Апскейлер: github.com/xinntao/Real-ESRGAN/releases, архив realesrgan-ncnn-vulkan-…-windows.zip. */
+const UPSCALER = 'tools/realesrgan/realesrgan-ncnn-vulkan.exe'
+/** Модель для фотографий (есть ещё для аниме — им не подходит). Увеличивает в 4 раза. */
+const UPSCALE_MODEL = 'realesrgan-x4plus'
+const BACKGROUNDS = ['pond', 'river', 'lake']
+/** Высота фона: экран телефона с плотностью 2 — около 1600 px. Выше — только лишний вес. */
+const BACKGROUND_HEIGHT = 1536
+
+mkdirSync('public/bg', { recursive: true })
+const upscale = existsSync(UPSCALER)
+if (!upscale) console.warn(`Нет ${UPSCALER} — фоны будут без увеличения`)
+const temp = mkdtempSync(join(tmpdir(), 'fishing-art-'))
+try {
+  for (const name of BACKGROUNDS) {
+    let source = `art/bg/${name}.jpg`
+    if (upscale) {
+      const big = join(temp, `${name}.png`)
+      execFileSync(UPSCALER, ['-i', source, '-o', big, '-n', UPSCALE_MODEL], { stdio: 'ignore' })
+      source = big
+    }
+    const out = `public/bg/${name}.webp`
+    const result = await sharp(source)
+      .resize({ height: BACKGROUND_HEIGHT, withoutEnlargement: !upscale })
+      .webp({ quality: 82, effort: 6 })
+      .toFile(out)
+    console.log(`${name}.jpg → ${out}: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
+  }
+} finally {
+  rmSync(temp, { recursive: true, force: true })
+}
 
 interface Job {
   src: string

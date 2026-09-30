@@ -21,7 +21,7 @@ export interface ContentPack {
   art?: PackArt
 }
 
-/** Спрайты пакета — пути относительно public/. Готовит их скрипт npm run sprites из картинок в art/. */
+/** Спрайты пакета — пути относительно public/. Готовит их скрипт npm run art из картинок в art/. */
 export interface PackArt {
   /** Поплавок стоймя, антенна вверху. */
   float: string

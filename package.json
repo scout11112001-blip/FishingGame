@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "balance": "node scripts/balance.ts",
-    "sprites": "node scripts/sprites.ts"
+    "art": "node scripts/art.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
