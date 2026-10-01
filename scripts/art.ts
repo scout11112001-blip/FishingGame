@@ -75,8 +75,9 @@ for (const job of JOBS) {
   const { data, info } = await sharp(`art/sprites/${job.src}`).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const { width, height } = info
   const bg = borderColor(data, width, height)
-  keyOut(data, width, height, bg)
-  if (isMagenta(bg)) despillMagenta(data, width, height)
+  const magenta = isMagenta(bg)
+  keyOut(data, width, height, bg, magenta)
+  if (magenta) despillMagenta(data, width, height)
   const box = opaqueBox(data, width, height)
 
   const left = Math.max(0, box.left - PADDING)
@@ -115,8 +116,10 @@ function borderColor(data: Buffer, width: number, height: number): [number, numb
  * Прозрачным делаем только фон, связанный с краем картинки: заливкой от краёв по похожим на фон пикселям.
  * Так уцелеют детали предмета того же цвета, что и фон, — тёмно-зелёная удочка на зелёном, красные плавники на розовом.
  * На мягком краю убираем примесь фона из цвета, иначе вокруг предмета останется цветная кайма.
+ * enclosed — заливать и замкнутые карманы чистого фона (между усом сома и губой): у пурпурного фона так можно,
+ * в рыбе такого цвета не бывает, а у зелёного нельзя — съест тёмно-зелёную удочку.
  */
-function keyOut(data: Buffer, width: number, height: number, bg: [number, number, number]) {
+function keyOut(data: Buffer, width: number, height: number, bg: [number, number, number], enclosed: boolean) {
   const distance = (p: number) => Math.hypot(data[p * 4] - bg[0], data[p * 4 + 1] - bg[1], data[p * 4 + 2] - bg[2])
   const visited = new Uint8Array(width * height)
   const stack: number[] = []
@@ -134,6 +137,7 @@ function keyOut(data: Buffer, width: number, height: number, bg: [number, number
     seed(y * width)
     seed(y * width + width - 1)
   }
+  if (enclosed) for (let p = 0; p < width * height; p++) if (distance(p) < SOLID) seed(p)
   while (stack.length) {
     const p = stack.pop()!
     const x = p % width
