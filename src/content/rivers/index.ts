@@ -1,5 +1,5 @@
 import type { FishSpawn } from '../../core/fish.ts'
-import type { ContentPack, Line, Reel, Rod, WaterBody } from '../types.ts'
+import type { Bait, ContentPack, Line, Reel, Rod, WaterBody } from '../types.ts'
 import { ALL_FISH, BREAM, CATFISH, CRUCIAN, PERCH, PIKE, ROACH, ZANDER } from './fish.ts'
 import { RIVERS_TEXTS } from './texts.ts'
 
@@ -141,6 +141,26 @@ const SPINNING_REEL: Reel = { id: 'spinning', name: 'Безынерционна�
 const MULTIPLIER_REEL: Reel = { id: 'multiplier', name: 'Мультипликатор', description: 'Быстро вытаскивает даже тяжёлую рыбу', speed: 0.17 }
 const POWER_REEL: Reel = { id: 'power', name: 'Силовая катушка', description: 'Самая быстрая подмотка', speed: 0.2 }
 
+// Прикормка — на рыбу покрупнее и подороже: за мелочью её не сыплют
+const BREAM_BAIT: Bait = {
+  id: 'bream',
+  name: 'Прикормка на леща',
+  description: 'Каша с жмыхом. 2 часа лещ клюёт вдвое чаще и подходит даже туда, где сам не стоит',
+  species: BREAM,
+}
+const ZANDER_BAIT: Bait = {
+  id: 'zander',
+  name: 'Прикормка на судака',
+  description: 'Мелкая рыбёшка с пахучим фаршем. 2 часа судак клюёт вдвое чаще и подходит даже туда, где сам не стоит',
+  species: ZANDER,
+}
+const CATFISH_BAIT: Bait = {
+  id: 'catfish',
+  name: 'Прикормка на сома',
+  description: 'Печень с перловкой — сом чует издалека. 2 часа клюёт вдвое чаще и подходит даже туда, где сам не стоит',
+  species: CATFISH,
+}
+
 export const RIVERS: ContentPack = {
   id: 'rivers',
   title: 'Рыбалка',
@@ -149,6 +169,7 @@ export const RIVERS: ContentPack = {
   rods: [BAMBOO, BOLOGNESE, FEEDER],
   lines: [LINE_02, LINE_03, BRAID, CATFISH_CORD],
   reels: [BASIC_REEL, SPINNING_REEL, MULTIPLIER_REEL, POWER_REEL],
+  baits: [BREAM_BAIT, ZANDER_BAIT, CATFISH_BAIT],
   starter: { rod: BAMBOO, line: LINE_02, reel: BASIC_REEL },
   art: {
     float: 'sprites/float.webp',

@@ -43,6 +43,14 @@ export const RIVERS_TEXTS: PackTexts = {
     tabs: { rod: 'Удочка', line: 'Леска', reel: 'Катушка' },
     stats: { strength: 'Прочность', speed: 'Скорость подмотки' },
   },
+  bait: {
+    button: 'Прикормка',
+    title: 'Прикормка',
+    waters: (fish, waters) => `Работает только там, где водится ${fish}: ${waters}`,
+    active: 'Действует',
+    left: (time) => `Осталось ${time}`,
+    status: (name, time, works) => (works ? `${name}: ${time}` : `${name}: ${time} — здесь не действует`),
+  },
   waters: {
     button: 'Водоём',
     title: 'Водоёмы',

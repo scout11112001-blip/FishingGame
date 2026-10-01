@@ -15,6 +15,8 @@ export interface ContentPack {
   rods: readonly Rod[]
   lines: readonly Line[]
   reels: readonly Reel[]
+  /** Прикормки: на время чаще клюёт одна рыба. */
+  baits: readonly Bait[]
   starter: Loadout
   texts: PackTexts
   /** Картинки поплавка и рыб. Без них сцена рисует простые фигуры. */
@@ -107,6 +109,18 @@ export interface Reel {
   speed: number
 }
 
+/**
+ * Прикормка на одну рыбу: пока действует, та клюёт вдвое чаще и подходит даже на места, где сама не стоит.
+ * Работает только на водоёмах, где эта рыба водится. Подробности — в bait.ts.
+ */
+export interface Bait {
+  id: string
+  name: string
+  /** Должно упоминать длительность и что работает только там, где рыба водится. */
+  description?: string
+  species: FishSpecies
+}
+
 export interface Loadout {
   rod: Rod
   line: Line
@@ -150,6 +164,17 @@ export interface PackTexts {
     title: string
     tabs: Record<keyof Loadout, string>
     stats: { strength: string; speed: string }
+  }
+  bait: {
+    button: string
+    title: string
+    /** На каких водоёмах прикормка работает: подставляется рыба и список водоёмов. */
+    waters: (fish: string, waters: string) => string
+    active: string
+    /** Сколько ещё действует — в карточке прикормки. */
+    left: (time: string) => string
+    /** Строка под счётчиками, пока прикормка действует; works — водится ли её рыба в текущем водоёме. */
+    status: (name: string, time: string, works: boolean) => string
   }
   waters: {
     button: string

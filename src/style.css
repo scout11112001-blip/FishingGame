@@ -58,6 +58,25 @@ body {
   cursor: pointer;
 }
 
+/* На телефоне кнопки делят ширину поровну — все в один ряд и не закрывают воду */
+@media (max-width: 480px) {
+  .hud-bar {
+    flex-wrap: nowrap;
+  }
+  .hud-button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 350px) {
+  .hud-button {
+    font-size: 14px;
+  }
+}
+
 /* Модальные панели (снасти, водоёмы): снизу на телефоне, по центру на широком экране */
 .sheet-backdrop {
   position: fixed;

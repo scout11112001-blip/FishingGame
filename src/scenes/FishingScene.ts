@@ -1,12 +1,14 @@
 import Phaser from 'phaser'
 import type { HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
+import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
-import { tackleOf, zoneSpawns, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { tackleOf, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
 import { WaterPanel } from '../ui/WaterPanel.ts'
-import { formatDepth, toMeters } from '../ui/units.ts'
+import { formatDepth, formatDuration, toMeters } from '../ui/units.ts'
 
 /** Дальняя граница отрисовки воды в единицах дистанции (равна длине лески). */
 const MAX_DRAW_DISTANCE = 1.5
@@ -70,10 +72,14 @@ export class FishingScene extends Phaser.Scene {
   private hud!: Hud
   private tacklePanel!: TacklePanel
   private waterPanel!: WaterPanel
+  private baitPanel!: BaitPanel
 
   private readonly pack: ContentPack = ACTIVE_PACK
   private water: WaterBody = this.pack.waters[0]
   private loadout: Loadout = this.pack.starter
+  private bait: ActiveBait | null = null
+  /** Водоём, снасть или прикормка сменились, а сессия ещё не в покое и не приняла их — пробуем каждый кадр. */
+  private equipPending = false
 
   private silver = 0
   private catches = 0
@@ -97,7 +103,7 @@ export class FishingScene extends Phaser.Scene {
   }
 
   create() {
-    this.session = new FishingSession({ zones: zoneSpawns(this.water), tackle: tackleOf(this.loadout) })
+    this.session = new FishingSession({ zones: zonesFor(this.water, this.bait, Date.now()), tackle: tackleOf(this.loadout) })
     this.session.on((e) => this.onEvent(e))
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
@@ -135,19 +141,29 @@ export class FishingScene extends Phaser.Scene {
     // Интерфейс вне боя — HTML поверх игры: кнопки внизу и панели выбора
     this.tacklePanel = new TacklePanel(this.pack, this.loadout, (loadout) => {
       this.loadout = loadout
-      this.session.equip(zoneSpawns(this.water), tackleOf(loadout))
+      this.equip()
     })
     this.waterPanel = new WaterPanel(this.pack, this.water, (water) => {
       this.water = water
-      this.session.equip(zoneSpawns(water), tackleOf(this.loadout))
+      this.equip()
     })
+    this.baitPanel = new BaitPanel(
+      this.pack,
+      () => this.bait,
+      (bait) => {
+        this.bait = { bait, until: Date.now() + BAIT_DURATION_MS }
+        this.equip()
+      },
+    )
     this.hud = new Hud()
     this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
     this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
+    this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
       this.tacklePanel.destroy()
       this.waterPanel.destroy()
+      this.baitPanel.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
@@ -177,6 +193,12 @@ export class FishingScene extends Phaser.Scene {
     this.nibbleAge += dt
     this.tooFarAge += dt
     this.steerWithKeys(dt)
+    // Прикормка кончилась — рыба возвращается на свои места. Начатый заброс доловим с прикормкой
+    if (this.bait && !isBaitActive(this.bait, Date.now())) {
+      this.bait = null
+      this.equipPending = true
+    }
+    if (this.equipPending) this.equip()
     this.session.update(dt)
     this.draw()
   }
@@ -218,7 +240,22 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private get panelOpen(): boolean {
-    return this.tacklePanel.isOpen || this.waterPanel.isOpen
+    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen
+  }
+
+  /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
+  private equip() {
+    this.equipPending = !this.session.equip(zonesFor(this.water, this.bait, Date.now()), tackleOf(this.loadout))
+  }
+
+  /** Строка счётчиков, а под ней — сколько ещё действует прикормка. */
+  private walletLine(): string {
+    const line = `${this.texts.wallet}: ${this.silver}   ${this.texts.catchCount}: ${this.catches}`
+    const now = Date.now()
+    if (!isBaitActive(this.bait, now)) return line
+    const { bait, until } = this.bait
+    return `${line}
+${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.water, bait.species))}`
   }
 
   /**
@@ -403,7 +440,7 @@ export class FishingScene extends Phaser.Scene {
     this.walletText
       .setFontSize(fontSize * 0.8)
       .setPosition(12, 10)
-      .setText(`${this.texts.wallet}: ${this.silver}   ${this.texts.catchCount}: ${this.catches}`)
+      .setText(this.walletLine())
     this.hud.setVisible(idle)
     this.statusText
       .setWordWrapWidth(w * 0.9)
