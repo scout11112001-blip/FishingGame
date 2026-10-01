@@ -61,6 +61,12 @@ const JOBS: Job[] = [
   { src: 'sudak.jpg', out: 'zander', size: 720 },
   { src: 'shuka.jpg', out: 'pike', size: 720 },
   { src: 'som.jpg', out: 'catfish', size: 720 },
+  // Значки достижений: в меню 60 px, 192 — с запасом на плотный экран. Чего ещё нет — пропускается
+  ...['first', 'fifty', 'hundred', 'thousand', 'species', 'record', 'river', 'lake', 'xp'].map((name) => ({
+    src: `ach-${name}.jpg`,
+    out: `ach-${name}`,
+    size: 192,
+  })),
 ]
 
 /** Отличие от цвета фона (0..441): ниже SOLID — точно фон, выше EDGE — точно предмет, между — мягкий край. */
@@ -74,6 +80,10 @@ const SPILL_BAND = 8
 mkdirSync('public/sprites', { recursive: true })
 
 for (const job of JOBS) {
+  if (!existsSync(`art/sprites/${job.src}`)) {
+    console.warn(`Нет art/sprites/${job.src} — пропускаю`)
+    continue
+  }
   const { data, info } = await sharp(`art/sprites/${job.src}`).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const { width, height } = info
   const bg = borderColor(data, width, height)

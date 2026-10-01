@@ -55,6 +55,25 @@ export const RIVERS_TEXTS: PackTexts = {
     left: (time) => `Осталось ${time}`,
     status: (name, time, works) => (works ? `${name}: ${time}` : `${name}: ${time} — здесь не действует`),
   },
+  achievements: {
+    button: 'Достижения',
+    title: 'Достижения',
+    catches: (goal) =>
+      goal === 1
+        ? { title: 'Первый улов', description: 'Поймай первую рыбу' }
+        : goal < 100
+          ? { title: 'Полведра', description: `Поймай ${goal} рыб` }
+          : goal < 1000
+            ? { title: 'Полное ведро', description: `Поймай ${goal} рыб` }
+            : { title: 'Гроза водоёмов', description: `Поймай ${goal} рыб` },
+    species: (fish, goal) => ({ title: `${fish}: сотня`, description: `Поймай ${goal} рыб этого вида` }),
+    water: (name, xp) => ({ title: name, description: `Открой водоём — набери ${xp} опыта` }),
+    xp: (goal) => ({ title: 'Бывалый рыбак', description: `Набери ${goal} опыта` }),
+    record: (fish, kg) => ({ title: `Рекорд: ${fish.toLocaleLowerCase('ru')}`, description: `${fish} весом от ${kg} кг` }),
+    progress: (value, target) => `${value} / ${target}`,
+    best: (kg) => `Лучшая: ${kg} кг`,
+    done: 'Получено',
+  },
   waters: {
     button: 'Водоём',
     title: 'Водоёмы',

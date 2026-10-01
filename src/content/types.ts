@@ -165,6 +165,11 @@ export function tackleOf({ rod, line, reel }: Loadout, water?: WaterBody): Tackl
   return { castLevels: water ? rodReach(water, rod) : rod.castLevels, lineStrength: line.strength, reelSpeed: reel.speed }
 }
 
+export interface AchievementText {
+  title: string
+  description: string
+}
+
 /** Все тексты интерфейса. Функции — там, где в текст подставляются значения. */
 export interface PackTexts {
   /** Подписи счётчиков в углу экрана. */
@@ -216,6 +221,21 @@ export interface PackTexts {
     left: (time: string) => string
     /** Строка под счётчиками, пока прикормка действует; works — водится ли её рыба в текущем водоёме. */
     status: (name: string, time: string, works: boolean) => string
+  }
+  achievements: {
+    /** Подпись кнопки для экранов чтения с экрана: на самой кнопке — кубок. */
+    button: string
+    title: string
+    /** Название и задание каждого достижения: в задание подставляются цели. */
+    catches: (goal: number) => AchievementText
+    species: (fish: string, goal: number) => AchievementText
+    water: (name: string, xp: number) => AchievementText
+    xp: (goal: number) => AchievementText
+    record: (fish: string, kg: string) => AchievementText
+    /** Прогресс под заданием: «37 / 50», у рекорда — «лучшая: 0,42 кг». */
+    progress: (value: number, target: number) => string
+    best: (kg: string) => string
+    done: string
   }
   waters: {
     button: string

@@ -58,6 +58,63 @@ body {
   cursor: pointer;
 }
 
+/* Кнопка вверху справа — в стиле нижних, на телефоне только значок */
+.hud-top {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  right: 16px;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.hud-top[hidden] {
+  display: none;
+}
+
+.hud-icon-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 20px;
+}
+
+.hud-label {
+  display: none;
+  font-size: 17px;
+}
+
+@media (min-width: 700px) {
+  .hud-label {
+    display: inline;
+  }
+}
+
+/* Восклицательный знак «есть новое»: на кнопке достижений и на краю нового достижения */
+.hud-alert,
+.ach-alert {
+  position: absolute;
+  top: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #e53935;
+  color: #fff;
+  font: 700 15px/22px var(--ui-font);
+  text-align: center;
+  box-shadow: 0 0 0 2px #10364a;
+}
+
+.hud-alert {
+  left: -6px;
+}
+
+.hud-alert[hidden] {
+  display: none;
+}
+
 /* На телефоне кнопки делят ширину поровну — все в один ряд и не закрывают воду */
 @media (max-width: 480px) {
   .hud-bar {
@@ -75,6 +132,13 @@ body {
   .hud-button {
     font-size: 14px;
   }
+}
+
+/* Верхняя кнопка не делит ширину с нижними: правило выше для телефона её не касается */
+.hud-top .hud-icon-button {
+  flex: none;
+  padding: 0 14px;
+  font-size: 20px;
 }
 
 /* Модальные панели (снасти, водоёмы): снизу на телефоне, по центру на широком экране */
@@ -255,6 +319,68 @@ body {
 
 .sheet-card.locked .sheet-buy {
   color: var(--ui-muted);
+}
+
+/* Достижение: значок слева, текст справа */
+.ach-card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: default;
+}
+
+.ach-card.done {
+  border-color: rgba(255, 193, 7, 0.55);
+  background: rgba(255, 193, 7, 0.1);
+}
+
+/* На углу значка: за край карточки нельзя — список с прокруткой его обрежет */
+.ach-alert {
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+}
+
+.ach-icon {
+  position: relative;
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ach-icon img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* Рыба поверх значка «сотни» и рекорда */
+.ach-icon .ach-fish {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72%;
+  transform: translate(-50%, -50%);
+}
+
+.ach-emoji {
+  font-size: 40px;
+  line-height: 1;
+}
+
+/* Не полученное — бесцветным, чтобы полученные выделялись */
+.ach-card:not(.done) .ach-icon {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.ach-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .sheet-card-desc {

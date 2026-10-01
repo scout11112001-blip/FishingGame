@@ -1,11 +1,13 @@
 import Phaser from 'phaser'
 import type { HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
+import { AchievementLog } from '../content/achievements.ts'
 import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import { Shop } from '../content/shop.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
@@ -79,6 +81,8 @@ export class FishingScene extends Phaser.Scene {
   private tacklePanel!: TacklePanel
   private waterPanel!: WaterPanel
   private baitPanel!: BaitPanel
+  private achievementPanel!: AchievementPanel
+  private achievementButton!: HTMLButtonElement
 
   private readonly pack: ContentPack = ACTIVE_PACK
   private water: WaterBody = this.pack.waters[0]
@@ -89,6 +93,8 @@ export class FishingScene extends Phaser.Scene {
 
   /** Серебро и купленные снасти. */
   private readonly shop = new Shop(this.pack)
+  /** Статистика улова и достижения. */
+  private readonly achievements = new AchievementLog(this.pack)
   /** Опыт — по рыбе за рыбу; открывает водоёмы. */
   private xp = 0
   private elapsed = 0
@@ -172,11 +178,14 @@ export class FishingScene extends Phaser.Scene {
     this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
     this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
     this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
+    this.achievementPanel = new AchievementPanel(this.pack, this.achievements)
+    this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
       this.tacklePanel.destroy()
       this.waterPanel.destroy()
       this.baitPanel.destroy()
+      this.achievementPanel.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
@@ -254,7 +263,7 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private get panelOpen(): boolean {
-    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen
+    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen || this.achievementPanel.isOpen
   }
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
@@ -382,6 +391,7 @@ export class FishingScene extends Phaser.Scene {
       case 'caught':
         this.shop.earn(e.price)
         this.xp += XP_PER_FISH
+        this.achievements.onCatch(e.fish, this.xp)
         this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: newlyOpened(this.pack, this.xp - XP_PER_FISH, this.xp) }
         break
       case 'escaped':
@@ -485,6 +495,7 @@ export class FishingScene extends Phaser.Scene {
     // Интерфейс
     this.drawWallet(fontSize * 0.8)
     this.hud.setVisible(idle)
+    this.hud.setAlert(this.achievementButton, this.achievements.hasUnseen)
     this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
