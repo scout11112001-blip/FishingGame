@@ -89,6 +89,28 @@ describe('FishingSession: до подсечки', () => {
     expect(escapeReason(events)).toBe('tooEarly')
   })
 
+  it('настройки меняются только между забросами', () => {
+    const { session } = makeSession([small])
+    const quick = { ...DEFAULT_TUNING, biteDelayMin: 0.5, biteDelayMax: 0.5 }
+    /** Сколько секунд от заброса в точку до поклёвки. */
+    const secondsToBite = () => {
+      tapCast(session)
+      runUntil(session, () => session.phase === 'waiting')
+      let t = 0
+      for (; session.phase !== 'bite'; t += DT) session.update(DT)
+      return t
+    }
+    tapCast(session)
+    expect(session.setTuning(quick)).toBe(false)
+    runUntil(session, () => session.phase === 'waiting')
+    expect(session.setTuning(quick)).toBe(false)
+    session.press() // рано подсёк — снова в покое после экрана итога
+    session.press()
+    expect(session.phase).toBe('idle')
+    expect(session.setTuning(quick)).toBe(true)
+    expect(secondsToBite()).toBeCloseTo(0.5, 1)
+  })
+
   it('без подсечки рыба уходит', () => {
     const { session, events } = makeSession([small])
     tapCast(session)

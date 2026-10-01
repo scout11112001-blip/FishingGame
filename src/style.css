@@ -141,6 +141,115 @@ body {
   font-size: 20px;
 }
 
+/* Обучение: затемнение с вырезом над подсвеченным элементом и карточка-подсказка */
+.tut-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  cursor: pointer;
+  font-family: var(--ui-font);
+}
+
+.tut-overlay[hidden] {
+  display: none;
+}
+
+/* Ждём действия в игре — нажатия проходят сквозь слой */
+.tut-overlay.passthrough {
+  pointer-events: none;
+}
+
+/* Подсвечивать нечего — затемнён весь экран */
+.tut-overlay.dim {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tut-hole {
+  position: absolute;
+  border-radius: 14px;
+  /* Тень на весь экран вокруг выреза — само затемнение */
+  box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.6);
+  outline: 3px solid var(--ui-stat);
+  outline-offset: 2px;
+  animation: tut-pulse 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.tut-hole[hidden] {
+  display: none;
+}
+
+@keyframes tut-pulse {
+  50% {
+    outline-color: rgba(255, 193, 7, 0.35);
+    outline-offset: 6px;
+  }
+}
+
+.tut-card {
+  position: absolute;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 24px));
+  padding: 14px 16px;
+  border: 3px solid var(--ui-stat);
+  border-radius: 18px;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.tut-card.pop {
+  animation: tut-pop 0.35s ease-out;
+}
+
+@keyframes tut-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.tut-title {
+  color: var(--ui-stat);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.tut-text {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.tut-hint {
+  margin-top: 12px;
+  color: var(--ui-muted);
+  font-size: 14px;
+  font-weight: 600;
+  animation: tut-blink 1.2s ease-in-out infinite;
+}
+
+.tut-hint[hidden] {
+  display: none;
+}
+
+@keyframes tut-blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* Модальные панели (снасти, водоёмы): снизу на телефоне, по центру на широком экране */
 .sheet-backdrop {
   position: fixed;

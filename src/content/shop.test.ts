@@ -11,6 +11,11 @@ describe('магазин снастей', () => {
     }
   })
 
+  it('в тестовой версии всё куплено сразу', () => {
+    const shop = new Shop(RIVERS, true)
+    for (const slot of SLOTS) for (const item of itemsOf(RIVERS, slot)) expect(shop.owns(slot, item), item.name).toBe(true)
+  })
+
   it('без серебра не купить, с серебром — списывается цена', () => {
     const shop = new Shop(RIVERS)
     const line = RIVERS.lines[1]

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import './style.css'
+import { SANDBOX } from './sandbox.ts'
 import { FishingScene } from './scenes/FishingScene.ts'
 
 /**
@@ -40,3 +41,6 @@ window.addEventListener('resize', () => {
   game.canvas.style.height = `${h}px`
   game.scale.refresh()
 })
+
+// Чтобы тестовую вкладку не спутать с обычной
+if (SANDBOX) document.title += ' — тест'

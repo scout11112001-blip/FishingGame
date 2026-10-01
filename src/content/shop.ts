@@ -18,10 +18,10 @@ export class Shop {
   private _silver = 0
   private readonly owned = new Set<string>()
 
-  /** Стартовая снасть и всё без цены — есть с самого начала. */
-  constructor(pack: ContentPack) {
+  /** Стартовая снасть и всё без цены — есть с самого начала; с ownAll — вообще всё (тестовая версия). */
+  constructor(pack: ContentPack, ownAll = false) {
     for (const slot of SLOTS) {
-      for (const item of itemsOf(pack, slot)) if (!item.price) this.owned.add(keyOf(slot, item))
+      for (const item of itemsOf(pack, slot)) if (ownAll || !item.price) this.owned.add(keyOf(slot, item))
       this.owned.add(keyOf(slot, pack.starter[slot]))
     }
   }

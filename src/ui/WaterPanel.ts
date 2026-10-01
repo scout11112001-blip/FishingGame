@@ -11,13 +11,16 @@ export class WaterPanel {
   private readonly pack: ContentPack
   private readonly onChange: (water: WaterBody) => void
   private readonly getXp: () => number
+  /** Все водоёмы открыты независимо от опыта — тестовая версия. */
+  private readonly unlockAll: boolean
   private current: WaterBody
 
-  constructor(pack: ContentPack, current: WaterBody, getXp: () => number, onChange: (water: WaterBody) => void) {
+  constructor(pack: ContentPack, current: WaterBody, getXp: () => number, onChange: (water: WaterBody) => void, unlockAll = false) {
     this.pack = pack
     this.current = current
     this.getXp = getXp
     this.onChange = onChange
+    this.unlockAll = unlockAll
     this.sheet = new Sheet(pack.texts.waters.title, pack.texts.ui.done)
     this.list = el('ul', 'sheet-list')
     this.sheet.body.append(this.list)
@@ -42,7 +45,7 @@ export class WaterPanel {
     const xp = this.getXp()
     for (const water of this.pack.waters) {
       const selected = water.id === this.current.id
-      const open = isWaterOpen(water, xp)
+      const open = this.unlockAll || isWaterOpen(water, xp)
       const c = card(water.name, water.description, selected ? t.ui.selected : null, () => open && this.select(water))
       if (!open) {
         const need = water.unlockXp ?? 0

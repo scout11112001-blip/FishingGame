@@ -1,15 +1,18 @@
 import Phaser from 'phaser'
-import type { HookedFish } from '../core/fish.ts'
+import { makeFish, rollFish, type HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
 import { AchievementLog } from '../content/achievements.ts'
 import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import { Shop } from '../content/shop.ts'
+import { TUTORIAL_FISH_SIZE, TUTORIAL_TUNING, Tutorial, type TutorialTarget } from '../content/tutorial.ts'
+import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
+import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
 import { WaterPanel } from '../ui/WaterPanel.ts'
 import { formatDepth, formatDuration, formatSilver, toMeters } from '../ui/units.ts'
@@ -67,6 +70,7 @@ export class FishingScene extends Phaser.Scene {
   private walletLabel!: Phaser.GameObjects.Text
   private silverIcon!: Phaser.GameObjects.Image
   private walletText!: Phaser.GameObjects.Text
+  private xpText!: Phaser.GameObjects.Text
   private baitText!: Phaser.GameObjects.Text
   private fightText!: Phaser.GameObjects.Text
   private resultText!: Phaser.GameObjects.Text
@@ -83,6 +87,7 @@ export class FishingScene extends Phaser.Scene {
   private baitPanel!: BaitPanel
   private achievementPanel!: AchievementPanel
   private achievementButton!: HTMLButtonElement
+  private tutorialOverlay!: TutorialOverlay
 
   private readonly pack: ContentPack = ACTIVE_PACK
   private water: WaterBody = this.pack.waters[0]
@@ -92,7 +97,9 @@ export class FishingScene extends Phaser.Scene {
   private equipPending = false
 
   /** Серебро и купленные снасти. */
-  private readonly shop = new Shop(this.pack)
+  private readonly shop = new Shop(this.pack, SANDBOX)
+  /** Обучение на первом забросе; null — уже пройдено. В тестовой версии его нет. */
+  private tutorial: Tutorial | null = SANDBOX ? null : new Tutorial()
   /** Статистика улова и достижения. */
   private readonly achievements = new AchievementLog(this.pack)
   /** Опыт — по рыбе за рыбу; открывает водоёмы. */
@@ -119,7 +126,14 @@ export class FishingScene extends Phaser.Scene {
   }
 
   create() {
-    this.session = new FishingSession({ zones: zonesFor(this.water, this.bait, Date.now()), tackle: tackleOf(this.loadout, this.water) })
+    this.session = new FishingSession({
+      zones: zonesFor(this.water, this.bait, Date.now()),
+      tackle: tackleOf(this.loadout, this.water),
+      tuning: this.tutorial ? TUTORIAL_TUNING : DEFAULT_TUNING,
+      // В обучении клюёт самая частая рыба места, покрупнее средней: бой подольше, рывок заметен
+      pickFish: (rng, spawns) =>
+        this.tutorial ? makeFish(spawns.reduce((a, b) => (b.rarity > a.rarity ? b : a)).species, TUTORIAL_FISH_SIZE) : rollFish(rng, spawns),
+    })
     this.session.on((e) => this.onEvent(e))
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
@@ -152,6 +166,7 @@ export class FishingScene extends Phaser.Scene {
     this.noticeText = text()
     this.walletLabel = text().setOrigin(0, 0).setAlign('left')
     this.walletText = text().setOrigin(0, 0).setAlign('left')
+    this.xpText = text().setOrigin(0, 0).setAlign('left')
     this.baitText = text().setOrigin(0, 0).setAlign('left')
     this.silverIcon = this.add.image(0, 0, this.textures.exists(SILVER_KEY) ? SILVER_KEY : '__DEFAULT').setOrigin(0, 0.5)
     // С запасом на водоём с наибольшим числом мест; лишние просто не показываем
@@ -162,10 +177,16 @@ export class FishingScene extends Phaser.Scene {
       this.loadout = loadout
       this.equip()
     })
-    this.waterPanel = new WaterPanel(this.pack, this.water, () => this.xp, (water) => {
-      this.water = water
-      this.equip()
-    })
+    this.waterPanel = new WaterPanel(
+      this.pack,
+      this.water,
+      () => this.xp,
+      (water) => {
+        this.water = water
+        this.equip()
+      },
+      SANDBOX,
+    )
     this.baitPanel = new BaitPanel(
       this.pack,
       () => this.bait,
@@ -180,12 +201,14 @@ export class FishingScene extends Phaser.Scene {
     this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
     this.achievementPanel = new AchievementPanel(this.pack, this.achievements)
     this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
+    this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
       this.tacklePanel.destroy()
       this.waterPanel.destroy()
       this.baitPanel.destroy()
       this.achievementPanel.destroy()
+      this.tutorialOverlay.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
@@ -210,7 +233,8 @@ export class FishingScene extends Phaser.Scene {
   }
 
   update(_time: number, deltaMs: number) {
-    const dt = deltaMs / 1000
+    // Пока на экране шаг обучения, игра стоит: и рыбалка, и покачивание поплавка
+    const dt = this.tutorial?.frozen ? 0 : deltaMs / 1000
     this.elapsed += dt
     this.nibbleAge += dt
     if (this.notice) this.notice.age += dt
@@ -221,7 +245,9 @@ export class FishingScene extends Phaser.Scene {
       this.equipPending = true
     }
     if (this.equipPending) this.equip()
-    this.session.update(dt)
+    if (dt > 0) this.session.update(dt)
+    if (this.session.fight?.mode === 'warn') this.tutorialEvent(() => this.tutorial?.onRushWarning())
+    this.finishTutorial()
     this.draw()
   }
 
@@ -289,9 +315,14 @@ export class FishingScene extends Phaser.Scene {
       x += h
     }
     // Опыт — с порогом ближайшего закрытого водоёма: видно, сколько осталось
-    const next = nextLockedWater(this.pack, this.xp)
+    // В тестовой версии водоёмы открыты с начала — порога нет
+    const next = SANDBOX ? undefined : nextLockedWater(this.pack, this.xp)
     const xp = next ? `${this.xp} / ${next.unlockXp}` : `${this.xp}`
-    this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.shop.silver)}   ${this.texts.xp}: ${xp}`)
+    const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.shop.silver)}`)
+    this.xpText
+      .setFontSize(size)
+      .setPosition(x + silver.width + size * 1.2, y0)
+      .setText(`${this.texts.xp}: ${xp}`)
 
     const now = Date.now()
     const bait = isBaitActive(this.bait, now) ? this.bait : null
@@ -368,9 +399,42 @@ export class FishingScene extends Phaser.Scene {
     // Пока открыта панель, пробел не должен забрасывать удочку у неё за спиной
     if (this.panelOpen) return
     const phase = this.session.phase
+    if (this.tutorial) {
+      if (this.tutorial.step?.tapToContinue) return this.tutorialTap()
+      // Новичок не должен спугнуть первую рыбу, подсекая раньше времени
+      if (phase === 'waiting') return
+    }
     if ((phase === 'caught' || phase === 'escaped') && this.session.timeInPhase < RESULT_MIN_SECONDS) return
     if (phase === 'idle' && !this.rodFits) return this.warnWeakRod({ x: this.view.w / 2, y: this.view.h * 0.6 })
     this.session.press()
+  }
+
+  /** Тап по карточке обучения (или пробел). */
+  private tutorialTap() {
+    const t = this.tutorial
+    if (!t) return
+    const closed = this.tutorialEvent(() => t.next())
+    // Сорвалась — сразу к новому забросу; последняя карточка заодно закрывает экран улова
+    const result = this.session.phase === 'caught' || this.session.phase === 'escaped'
+    if (result && (closed === 'escaped' || closed === 'xp')) this.session.press()
+  }
+
+  /**
+   * Сообщить обучению о событии. Если от этого игра встала на новом шаге — отпускаем «палец»:
+   * игрок мог держать его, и после объяснения леска не должна натягиваться сама.
+   */
+  private tutorialEvent<T>(event: () => T): T {
+    const before = this.tutorial?.step
+    const result = event()
+    if (this.tutorial?.step !== before && this.tutorial?.frozen) this.session.release()
+    return result
+  }
+
+  /** Обучение пройдено: обычные настройки рыбалки с ближайшего покоя, слой обучения — прочь. */
+  private finishTutorial() {
+    if (!this.tutorial?.done || !this.session.setTuning(DEFAULT_TUNING)) return
+    this.tutorial = null
+    this.tutorialOverlay.hide()
   }
 
   /** Можно ли текущей удочкой ловить на текущем водоёме: на озеро с бамбуковой не забросишь. */
@@ -392,7 +456,7 @@ export class FishingScene extends Phaser.Scene {
         this.shop.earn(e.price)
         this.xp += XP_PER_FISH
         this.achievements.onCatch(e.fish, this.xp)
-        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: newlyOpened(this.pack, this.xp - XP_PER_FISH, this.xp) }
+        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: SANDBOX ? [] : newlyOpened(this.pack, this.xp - XP_PER_FISH, this.xp) }
         break
       case 'escaped':
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
@@ -402,6 +466,7 @@ export class FishingScene extends Phaser.Scene {
         break
       case 'phase':
         if (e.phase === 'idle') this.result = null
+        this.tutorialEvent(() => this.tutorial?.onPhase(e.phase))
         break
     }
   }
@@ -494,7 +559,7 @@ export class FishingScene extends Phaser.Scene {
 
     // Интерфейс
     this.drawWallet(fontSize * 0.8)
-    this.hud.setVisible(idle)
+    this.hud.setVisible(idle && !this.tutorial)
     this.hud.setAlert(this.achievementButton, this.achievements.hasUnseen)
     this.statusText
       .setWordWrapWidth(w * 0.9)
@@ -526,6 +591,62 @@ export class FishingScene extends Phaser.Scene {
     if (this.result) {
       this.resultText.setWordWrapWidth(w * 0.9).setFontSize(fontSize * 1.1).setPosition(w / 2, h * 0.58).setText(resultMessage(this.result, this.texts))
       if (this.result.kind === 'caught') this.drawCaughtFish(this.result.fish, w, h)
+    }
+
+    this.drawTutorial(castTarget, floatR, w, h)
+  }
+
+  /** Карточка шага обучения и вырез над тем, о чём она. */
+  private drawTutorial(float: Point, floatR: number, w: number, h: number) {
+    const step = this.tutorial?.step
+    if (!step) return this.tutorialOverlay.hide()
+    const t = this.texts.tutorial
+    let card
+    if (step.id === 'silver') card = t.silver(formatSilver(this.result?.kind === 'caught' ? this.result.price : 0))
+    else if (step.id === 'xp') {
+      const next = nextLockedWater(this.pack, this.xp)
+      card = t.xp(next?.name ?? null, next?.unlockXp ?? 0)
+    } else card = t.steps[step.id]
+    // Сход: сразу и почему — экран итога под затемнением не прочитать
+    if (step.id === 'escaped' && this.result?.kind === 'escaped') card = { ...card, text: `${this.texts.escape[this.result.reason]} ${card.text}` }
+    const hint = step.tapToContinue ? (step.id === 'xp' ? t.finish : t.next) : null
+    this.tutorialOverlay.show(step.id, card.title, card.text, hint, step.tapToContinue)
+    this.tutorialOverlay.place(this.tutorialRect(step.target, float, floatR, w, h))
+  }
+
+  /** Где на экране то, что подсвечивает шаг обучения, — в CSS-пикселях с небольшим запасом. */
+  private tutorialRect(target: TutorialTarget, float: Point, floatR: number, w: number, h: number): Rect | null {
+    const pad = (r: Rect, p = 6): Rect => ({ x: r.x - p, y: r.y - p, w: r.w + p * 2, h: r.h + p * 2 })
+    const textBox = (from: Phaser.GameObjects.Text, to: Phaser.GameObjects.Text): Rect =>
+      pad({ x: from.x, y: from.y, w: to.x + to.width - from.x, h: Math.max(from.height, to.height) })
+    const { distToY } = this.water3d(w, h)
+    const band = (fromLevel: number, toLevel: number): Rect => {
+      const levels = this.water.zones.length
+      const top = distToY(castLevelRange(toLevel, levels)[1])
+      const bottom = distToY(castLevelRange(fromLevel, levels)[0])
+      return { x: 4, y: top, w: w - 8, h: bottom - top }
+    }
+    switch (target) {
+      case 'water':
+        return band(0, this.water.zones.length - 1)
+      case 'nearZone':
+        return band(0, 0)
+      case 'float': {
+        const r = Math.max(36, floatR * 5)
+        return { x: float.x - r, y: float.y - r, w: r * 2, h: r * 2 }
+      }
+      case 'effortBar':
+        return pad(this.effortBarRect(w, h), 10)
+      case 'rodStrip': {
+        const { spot, cx, half, top } = this.rodStrip(w, h)
+        return pad({ x: cx - half - spot, y: top, w: half * 2 + spot * 2, h: spot * 2 + 12 })
+      }
+      case 'silver':
+        return textBox(this.walletLabel, this.walletText)
+      case 'xp':
+        return textBox(this.xpText, this.xpText)
+      default:
+        return null
     }
   }
 
@@ -583,14 +704,18 @@ export class FishingScene extends Phaser.Scene {
    * Вертикальная шкала усилия у левого края, прямо над полосой для пальца — рядом с ним, чтобы не переводить взгляд.
    * Снизу вверх: серая зона — мало (рыба сойдёт), зелёная — нормально, красная — леска на пределе.
    */
-  private drawEffortBar(fight: FightView, w: number, h: number, horizon: number, fontSize: number) {
-    const g = this.uiGfx
+  /** Где шкала усилия: у левого края, над полосой для пальца. */
+  private effortBarRect(w: number, h: number): Rect {
     const { top: stripTop } = this.rodStrip(w, h)
     const barW = Phaser.Math.Clamp(w * 0.06, 22, 34)
     const barH = Phaser.Math.Clamp(h * 0.28, 120, 280)
-    const x = 12
-    const bottom = stripTop - 10
-    const y = bottom - barH
+    return { x: 12, y: stripTop - 10 - barH, w: barW, h: barH }
+  }
+
+  private drawEffortBar(fight: FightView, w: number, h: number, horizon: number, fontSize: number) {
+    const g = this.uiGfx
+    const { x, y, w: barW, h: barH } = this.effortBarRect(w, h)
+    const bottom = y + barH
     // Доля шкалы → экранная Y: 0 внизу, 1 наверху
     const at = (v: number) => bottom - barH * Phaser.Math.Clamp(v, 0, 1)
 

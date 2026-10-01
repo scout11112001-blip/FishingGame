@@ -1,5 +1,6 @@
 import type { FishSpawn, FishSpecies, HookedFish } from '../core/fish.ts'
 import type { CastZones, EscapeReason, Phase, Tackle } from '../core/FishingSession.ts'
+import type { TutorialStepId } from './tutorial.ts'
 
 /**
  * Пакет контента — всё, чем одна обёртка игры отличается от другой.
@@ -165,6 +166,12 @@ export function tackleOf({ rod, line, reel }: Loadout, water?: WaterBody): Tackl
   return { castLevels: water ? rodReach(water, rod) : rod.castLevels, lineStrength: line.strength, reelSpeed: reel.speed }
 }
 
+/** Карточка шага обучения: заголовок покрупнее и пояснение. */
+export interface TutorialText {
+  title: string
+  text: string
+}
+
 export interface AchievementText {
   title: string
   description: string
@@ -221,6 +228,16 @@ export interface PackTexts {
     left: (time: string) => string
     /** Строка под счётчиками, пока прикормка действует; works — водится ли её рыба в текущем водоёме. */
     status: (name: string, time: string, works: boolean) => string
+  }
+  tutorial: {
+    /** Внизу карточки, которая закрывается тапом. */
+    next: string
+    /** Внизу последней карточки. */
+    finish: string
+    steps: Record<Exclude<TutorialStepId, 'silver' | 'xp'>, TutorialText>
+    silver: (price: string) => TutorialText
+    /** water — ближайший закрытый водоём и сколько опыта для него нужно; null — закрытых нет. */
+    xp: (water: string | null, xp: number) => TutorialText
   }
   achievements: {
     /** Подпись кнопки для экранов чтения с экрана: на самой кнопке — кубок. */

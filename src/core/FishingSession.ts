@@ -224,7 +224,7 @@ export class FishingSession {
   private zones: CastZones
   private tackle: Tackle
   private readonly rng: Rng
-  private readonly tuning: Tuning
+  private tuning: Tuning
   private readonly pickFish: (rng: Rng, spawns: readonly FishSpawn[]) => HookedFish
 
   constructor(options: SessionOptions) {
@@ -240,6 +240,13 @@ export class FishingSession {
     if (this._phase !== 'idle') return false
     this.zones = zones
     this.tackle = tackle
+    return true
+  }
+
+  /** Сменить настройки (обучение играет с более мягкими). Как и снасть — только между забросами. */
+  setTuning(tuning: Tuning): boolean {
+    if (this._phase !== 'idle') return false
+    this.tuning = tuning
     return true
   }
 

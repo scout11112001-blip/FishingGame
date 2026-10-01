@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:sandbox": "vite --mode sandbox --port 5174",
     "build": "tsc && vite build",
+    "build:sandbox": "tsc && vite build --mode sandbox --outDir dist-sandbox",
     "preview": "vite preview",
     "test": "vitest run",
     "balance": "node scripts/balance.ts",
