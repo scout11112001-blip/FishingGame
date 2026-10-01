@@ -4,7 +4,7 @@ import { Tutorial, type TutorialStepId } from './tutorial.ts'
 const id = (t: Tutorial) => t.step?.id ?? null
 
 describe('обучение на первом забросе', () => {
-  it('идёт по шагам: места ловли → заброс → ожидание → поклёвка → шкала → рамка → рывок → серебро → опыт', () => {
+  it('идёт по шагам: места ловли → заброс → ожидание → поклёвка → шкала → рамка → рывок → серебро → опыт → кнопки', () => {
     const t = new Tutorial()
     const seen: (TutorialStepId | null)[] = [id(t)]
     const tap = () => {
@@ -29,10 +29,23 @@ describe('обучение на первом забросе', () => {
     tap()
     t.onPhase('caught')
     seen.push(id(t))
-    tap()
-    tap()
-    expect(seen).toEqual(['zones', 'cast', null, 'wait', null, 'bite', 'tension', 'tensionHold', 'slider', null, 'rush', null, 'silver', 'xp', null])
+    for (let i = 0; i < 6; i++) tap()
+    expect(seen).toEqual([
+      'zones', 'cast', null, 'wait', null, 'bite', 'tension', 'tensionHold', 'slider', null, 'rush', null,
+      'silver', 'xp', 'tackleButton', 'waterButton', 'baitButton', 'achievementsButton', null,
+    ])
     expect(t.done).toBe(true)
+  })
+
+  it('кнопки меню видны только на шагах про них', () => {
+    const t = new Tutorial()
+    expect(t.step?.hud).toBeFalsy()
+    t.onPhase('caught')
+    t.next()
+    expect(t.step?.hud).toBeFalsy() // карточка опыта — ещё на экране улова
+    t.next()
+    expect(id(t)).toBe('tackleButton')
+    expect(t.step?.hud).toBe(true)
   })
 
   it('объяснения — когда игра стоит; заброс ждёт действия игрока, а не тапа по карточке', () => {
@@ -98,8 +111,7 @@ describe('обучение на первом забросе', () => {
   it('после конца обучения на игру больше не реагирует', () => {
     const t = new Tutorial()
     t.onPhase('caught')
-    t.next()
-    t.next()
+    for (let i = 0; i < 6; i++) t.next()
     expect(t.done).toBe(true)
     t.onPhase('escaped')
     t.onPhase('bite')

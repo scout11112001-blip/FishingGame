@@ -6,7 +6,7 @@ import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } 
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import { Shop } from '../content/shop.ts'
-import { TUTORIAL_FISH_SIZE, TUTORIAL_TUNING, Tutorial, type TutorialTarget } from '../content/tutorial.ts'
+import { LAST_STEP, TUTORIAL_FISH_SIZE, TUTORIAL_TUNING, Tutorial, type TutorialTarget } from '../content/tutorial.ts'
 import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
@@ -87,6 +87,8 @@ export class FishingScene extends Phaser.Scene {
   private baitPanel!: BaitPanel
   private achievementPanel!: AchievementPanel
   private achievementButton!: HTMLButtonElement
+  /** Кнопки меню по шагам обучения, которые их подсвечивают. */
+  private readonly hudButtons = new Map<TutorialTarget, HTMLButtonElement>()
   private tutorialOverlay!: TutorialOverlay
 
   private readonly pack: ContentPack = ACTIVE_PACK
@@ -196,11 +198,12 @@ export class FishingScene extends Phaser.Scene {
       },
     )
     this.hud = new Hud()
-    this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
-    this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
-    this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
+    this.hudButtons.set('tackleButton', this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open()))
+    this.hudButtons.set('waterButton', this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open()))
+    this.hudButtons.set('baitButton', this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open()))
     this.achievementPanel = new AchievementPanel(this.pack, this.achievements)
     this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
+    this.hudButtons.set('achievementsButton', this.achievementButton)
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
@@ -414,7 +417,7 @@ export class FishingScene extends Phaser.Scene {
     const t = this.tutorial
     if (!t) return
     const closed = this.tutorialEvent(() => t.next())
-    // Сорвалась — сразу к новому забросу; последняя карточка заодно закрывает экран улова
+    // Сорвалась — сразу к новому забросу; карточка опыта закрывает экран улова — дальше карточки про кнопки
     const result = this.session.phase === 'caught' || this.session.phase === 'escaped'
     if (result && (closed === 'escaped' || closed === 'xp')) this.session.press()
   }
@@ -559,7 +562,7 @@ export class FishingScene extends Phaser.Scene {
 
     // Интерфейс
     this.drawWallet(fontSize * 0.8)
-    this.hud.setVisible(idle && !this.tutorial)
+    this.hud.setVisible(idle && (!this.tutorial || !!this.tutorial.step?.hud))
     this.hud.setAlert(this.achievementButton, this.achievements.hasUnseen)
     this.statusText
       .setWordWrapWidth(w * 0.9)
@@ -609,7 +612,7 @@ export class FishingScene extends Phaser.Scene {
     } else card = t.steps[step.id]
     // Сход: сразу и почему — экран итога под затемнением не прочитать
     if (step.id === 'escaped' && this.result?.kind === 'escaped') card = { ...card, text: `${this.texts.escape[this.result.reason]} ${card.text}` }
-    const hint = step.tapToContinue ? (step.id === 'xp' ? t.finish : t.next) : null
+    const hint = step.tapToContinue ? (step.id === LAST_STEP ? t.finish : t.next) : null
     this.tutorialOverlay.show(step.id, card.title, card.text, hint, step.tapToContinue)
     this.tutorialOverlay.place(this.tutorialRect(step.target, float, floatR, w, h))
   }
@@ -645,6 +648,13 @@ export class FishingScene extends Phaser.Scene {
         return textBox(this.walletLabel, this.walletText)
       case 'xp':
         return textBox(this.xpText, this.xpText)
+      case 'tackleButton':
+      case 'waterButton':
+      case 'baitButton':
+      case 'achievementsButton': {
+        const b = this.hudButtons.get(target)?.getBoundingClientRect()
+        return b && b.width ? pad({ x: b.left, y: b.top, w: b.width, h: b.height }) : null
+      }
       default:
         return null
     }

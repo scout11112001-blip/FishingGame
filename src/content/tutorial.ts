@@ -15,9 +15,25 @@ export type TutorialStepId =
   | 'escaped'
   | 'silver'
   | 'xp'
+  | 'tackleButton'
+  | 'waterButton'
+  | 'baitButton'
+  | 'achievementsButton'
 
 /** Что подсветить на экране. null — ничего: карточка посередине. */
-export type TutorialTarget = 'water' | 'nearZone' | 'float' | 'effortBar' | 'rodStrip' | 'silver' | 'xp' | null
+export type TutorialTarget =
+  | 'water'
+  | 'nearZone'
+  | 'float'
+  | 'effortBar'
+  | 'rodStrip'
+  | 'silver'
+  | 'xp'
+  | 'tackleButton'
+  | 'waterButton'
+  | 'baitButton'
+  | 'achievementsButton'
+  | null
 
 export interface TutorialStep {
   id: TutorialStepId
@@ -26,6 +42,8 @@ export interface TutorialStep {
   freeze: boolean
   /** Шаг закрывается тапом по экрану. Иначе тап уходит в игру — шаг ждёт действия игрока (заброс, подсечку). */
   tapToContinue: boolean
+  /** Кнопки меню видны: шаг про них. В остальное время обучения они спрятаны. */
+  hud?: boolean
 }
 
 const STEPS: Record<TutorialStepId, TutorialStep> = {
@@ -40,7 +58,15 @@ const STEPS: Record<TutorialStepId, TutorialStep> = {
   escaped: { id: 'escaped', target: null, freeze: true, tapToContinue: true },
   silver: { id: 'silver', target: 'silver', freeze: true, tapToContinue: true },
   xp: { id: 'xp', target: 'xp', freeze: true, tapToContinue: true },
+  // Кнопки меню — по карточке на каждую. Сами меню не открываем: тап по кнопке просто листает дальше
+  tackleButton: { id: 'tackleButton', target: 'tackleButton', freeze: true, tapToContinue: true, hud: true },
+  waterButton: { id: 'waterButton', target: 'waterButton', freeze: true, tapToContinue: true, hud: true },
+  baitButton: { id: 'baitButton', target: 'baitButton', freeze: true, tapToContinue: true, hud: true },
+  achievementsButton: { id: 'achievementsButton', target: 'achievementsButton', freeze: true, tapToContinue: true, hud: true },
 }
+
+/** Последний шаг обучения: после него — обычная игра. */
+export const LAST_STEP: TutorialStepId = 'achievementsButton'
 
 /** Что идёт следом за шагом, закрытым тапом. null — шаг просто гаснет, игра продолжается. */
 const AFTER: Partial<Record<TutorialStepId, TutorialStepId>> = {
@@ -49,6 +75,10 @@ const AFTER: Partial<Record<TutorialStepId, TutorialStepId>> = {
   tensionHold: 'slider',
   escaped: 'cast',
   silver: 'xp',
+  xp: 'tackleButton',
+  tackleButton: 'waterButton',
+  waterButton: 'baitButton',
+  baitButton: 'achievementsButton',
 }
 
 /**
@@ -95,7 +125,7 @@ export class Tutorial {
     const after = AFTER[step.id]
     this._step = after ? STEPS[after] : null
     if (after) this.shown.add(after)
-    if (step.id === 'xp') this._done = true
+    if (step.id === LAST_STEP) this._done = true
     return step.id
   }
 
