@@ -23,11 +23,10 @@ describe('прикормка', () => {
   it('на месте, где рыба не водится, она клюёт с шансом своего ближнего места без прикормки', () => {
     // Лещ на реке: у берега его нет, на бровке — 35%
     expect(chanceOf(baitedZones(RIVER, BREAM)[0], BREAM)).toBeCloseTo(0.35)
-    // Сом на озере есть только в глубокой яме — 20%, туда его и подманиваем
+    // Сом на озере есть только в глубокой яме — 20%, оттуда его и подманиваем к свалу
     const lake = baitedZones(LAKE, CATFISH)
     expect(chanceOf(lake[0], CATFISH)).toBeCloseTo(0.2)
-    expect(chanceOf(lake[1], CATFISH)).toBeCloseTo(0.2)
-    expect(chanceOf(lake[2], CATFISH)).toBeCloseTo(0.4)
+    expect(chanceOf(lake[1], CATFISH)).toBeCloseTo(0.4)
   })
 
   it('остальная рыба места делит оставшийся шанс в прежних пропорциях', () => {

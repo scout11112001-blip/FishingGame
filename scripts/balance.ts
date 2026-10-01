@@ -1,7 +1,7 @@
 // Отчёт по балансу пакета: для каждого водоёма и уровня снасти — как часто и как быстро ловится каждая рыба.
 // Запуск: npm run balance [-- id-пакета]
 import { ALL_PACKS } from '../src/content/index.ts'
-import { tackleOf, type ContentPack, type Loadout } from '../src/content/types.ts'
+import { rodFits, rodReach, tackleOf, type ContentPack, type Loadout } from '../src/content/types.ts'
 import { simulateLargest, simulateSpecies, spawnShare, type Summary } from '../src/sim/simulate.ts'
 
 const FIGHTS = 200
@@ -34,9 +34,10 @@ const reasons = (s: Summary) =>
 console.log(`Пакет «${pack.title}» (${pack.id}), бот с реакцией ${REACTION_SECONDS} с, ${FIGHTS} боёв на вид`)
 for (const water of pack.waters) {
   for (const { name, loadout } of tiers(pack)) {
+    if (!rodFits(water, loadout.rod)) continue
     // Бросаем так далеко, как добрасывает удочка: там самая сильная рыба
     const levels = water.zones.length
-    const castLevel = Math.min(loadout.rod.castLevels, levels) - 1
+    const castLevel = Math.min(rodReach(water, loadout.rod), levels) - 1
     const zone = water.zones[castLevel]
     console.log(`\n${water.name}, ${zone.name} — ${name}`)
     console.log('  рыба       доля   ловится  время   самая крупная   срывы')
@@ -44,7 +45,7 @@ for (const water of pack.waters) {
     let waterSeconds = 0
     for (const spawn of zone.spawns) {
       const { species } = spawn
-      const setup = { tackle: tackleOf(loadout), reactionSeconds: REACTION_SECONDS, cast: { level: castLevel, levels } }
+      const setup = { tackle: tackleOf(loadout, water), reactionSeconds: REACTION_SECONDS, cast: { level: castLevel, levels } }
       const all = simulateSpecies(spawn, setup, FIGHTS)
       const largest = simulateLargest(species, setup, 50)
       const share = spawnShare(zone.spawns, species)

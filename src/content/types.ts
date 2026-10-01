@@ -43,6 +43,11 @@ export interface WaterBody {
    * Рыба ближнего места водится и дальше — дальний заброс ничего не отнимает, только добавляет.
    */
   zones: readonly CastZone[]
+  /**
+   * Самая слабая удочка (её castLevels), которой здесь вообще можно ловить. По умолчанию 1 — любая.
+   * Удочка этого уровня добрасывает до ближнего места, каждый уровень выше — на место дальше (см. rodReach).
+   */
+  minCastLevels?: number
   /** Цвета заливки, пока картинка не загрузилась, и для водоёма без картинки. */
   palette: WaterPalette
   backdrop?: Backdrop
@@ -69,6 +74,24 @@ export interface CastZone {
   depthM: number
   /** Кто клюёт и как часто. Ссылки — на объекты рыб, чтобы опечатку поймал TypeScript. */
   spawns: readonly FishSpawn[]
+}
+
+/**
+ * До скольких мест водоёма добрасывает удочка: на обычном водоёме — castLevels,
+ * на том, где нужна удочка не слабее minCastLevels, — на столько меньше. 0 — даже до ближнего не добросит.
+ */
+export function rodReach(water: WaterBody, rod: Rod): number {
+  return Math.max(0, rod.castLevels - ((water.minCastLevels ?? 1) - 1))
+}
+
+/** Можно ли ловить на водоёме этой удочкой: на некоторых слабая не добрасывает даже до ближнего места. */
+export function rodFits(water: WaterBody, rod: Rod): boolean {
+  return rodReach(water, rod) >= 1
+}
+
+/** Самая слабая удочка пакета, которой можно ловить на водоёме, — её и советуем. */
+export function weakestFittingRod(pack: ContentPack, water: WaterBody): Rod | undefined {
+  return [...pack.rods].sort((a, b) => a.castLevels - b.castLevels).find((r) => rodFits(water, r))
 }
 
 /** Списки рыб по уровням — в том виде, в каком их ждёт ядро. */
@@ -127,8 +150,9 @@ export interface Loadout {
   reel: Reel
 }
 
-export function tackleOf({ rod, line, reel }: Loadout): Tackle {
-  return { castLevels: rod.castLevels, lineStrength: line.strength, reelSpeed: reel.speed }
+/** Снасть для ядра. С водоёмом — дальность удочки именно на нём (см. rodReach). */
+export function tackleOf({ rod, line, reel }: Loadout, water?: WaterBody): Tackle {
+  return { castLevels: water ? rodReach(water, rod) : rod.castLevels, lineStrength: line.strength, reelSpeed: reel.speed }
 }
 
 /** Все тексты интерфейса. Функции — там, где в текст подставляются значения. */
@@ -151,6 +175,8 @@ export interface PackTexts {
     locked: string
     /** Всплывает, когда игрок целится дальше, чем добрасывает удочка. */
     tooFar: string
+    /** Удочка не годится для водоёма: подставляется название самой слабой подходящей. */
+    needsRod: (rod: string) => string
     /** Подпись места ловли на воде: название и глубина. */
     zone: (name: string, depth: string) => string
   }

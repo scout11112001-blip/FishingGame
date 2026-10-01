@@ -3,7 +3,7 @@ import type { HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
 import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
-import { tackleOf, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
@@ -20,8 +20,8 @@ const RESULT_MIN_SECONDS = 0.6
 const ROD_SPAN = 0.8
 /** Какая доля ширины экрана доступна для заброса по горизонтали. */
 const CAST_SPAN = 0.9
-/** Сколько секунд висит предупреждение «удочка не добросит». */
-const TOO_FAR_SECONDS = 2.5
+/** Сколько секунд висит ненавязчивое предупреждение: «не добросит», «нужна удочка дальнобойнее». */
+const NOTICE_SECONDS = 2.5
 /** Из скольких точек состоит изгибающаяся удочка-картинка. */
 const ROD_POINTS = 24
 
@@ -62,7 +62,7 @@ export class FishingScene extends Phaser.Scene {
   private walletText!: Phaser.GameObjects.Text
   private fightText!: Phaser.GameObjects.Text
   private resultText!: Phaser.GameObjects.Text
-  private tooFarText!: Phaser.GameObjects.Text
+  private noticeText!: Phaser.GameObjects.Text
   /** Подписи мест ловли на воде — видны, пока выбираешь дальность заброса. */
   private zoneTexts: Phaser.GameObjects.Text[] = []
   /** Все надписи — чтобы при смене плотности экрана перерисовать их в новом разрешении. */
@@ -85,7 +85,8 @@ export class FishingScene extends Phaser.Scene {
   private catches = 0
   private elapsed = 0
   private nibbleAge = Infinity
-  private tooFarAge = Infinity
+  /** Ненавязчивое предупреждение: над поплавком (at = null) или там, куда нажали. Само гаснет. */
+  private notice: { text: string; age: number; at: Point | null } | null = null
   private result: Result | null = null
 
   constructor() {
@@ -103,7 +104,7 @@ export class FishingScene extends Phaser.Scene {
   }
 
   create() {
-    this.session = new FishingSession({ zones: zonesFor(this.water, this.bait, Date.now()), tackle: tackleOf(this.loadout) })
+    this.session = new FishingSession({ zones: zonesFor(this.water, this.bait, Date.now()), tackle: tackleOf(this.loadout, this.water) })
     this.session.on((e) => this.onEvent(e))
     // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
     if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
@@ -133,7 +134,7 @@ export class FishingScene extends Phaser.Scene {
     this.statusText = text()
     this.fightText = text()
     this.resultText = text()
-    this.tooFarText = text()
+    this.noticeText = text()
     this.walletText = text().setOrigin(0, 0).setAlign('left')
     // С запасом на водоём с наибольшим числом мест; лишние просто не показываем
     this.zoneTexts = Array.from({ length: MAX_CAST_LEVELS }, () => text().setOrigin(1, 0.5).setAlign('right'))
@@ -191,7 +192,7 @@ export class FishingScene extends Phaser.Scene {
     const dt = deltaMs / 1000
     this.elapsed += dt
     this.nibbleAge += dt
-    this.tooFarAge += dt
+    if (this.notice) this.notice.age += dt
     this.steerWithKeys(dt)
     // Прикормка кончилась — рыба возвращается на свои места. Начатый заброс доловим с прикормкой
     if (this.bait && !isBaitActive(this.bait, Date.now())) {
@@ -217,6 +218,7 @@ export class FishingScene extends Phaser.Scene {
     if (this.panelOpen) return
     const { w, h } = this.view
     const x = p.x / this.pixelRatio
+    if (!this.rodFits) return this.warnWeakRod({ x, y: p.y / this.pixelRatio })
     this.session.castTo(this.water3d(w, h).yToDist(p.y / this.pixelRatio), (x - w / 2) / ((w * CAST_SPAN) / 2))
   }
 
@@ -245,7 +247,7 @@ export class FishingScene extends Phaser.Scene {
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
   private equip() {
-    this.equipPending = !this.session.equip(zonesFor(this.water, this.bait, Date.now()), tackleOf(this.loadout))
+    this.equipPending = !this.session.equip(zonesFor(this.water, this.bait, Date.now()), tackleOf(this.loadout, this.water))
   }
 
   /** Строка счётчиков, а под ней — сколько ещё действует прикормка. */
@@ -325,7 +327,18 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
     if (this.panelOpen) return
     const phase = this.session.phase
     if ((phase === 'caught' || phase === 'escaped') && this.session.timeInPhase < RESULT_MIN_SECONDS) return
+    if (phase === 'idle' && !this.rodFits) return this.warnWeakRod({ x: this.view.w / 2, y: this.view.h * 0.6 })
     this.session.press()
+  }
+
+  /** Можно ли текущей удочкой ловить на текущем водоёме: на озеро с бамбуковой не забросишь. */
+  private get rodFits(): boolean {
+    return rodFits(this.water, this.loadout.rod)
+  }
+
+  private warnWeakRod(at: Point) {
+    const rod = weakestFittingRod(this.pack, this.water)
+    this.notice = { text: rod ? this.texts.cast.needsRod(rod.name) : this.texts.cast.locked, age: 0, at }
   }
 
   private onEvent(e: FishingEvent) {
@@ -342,7 +355,7 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
         break
       case 'cast':
-        this.tooFarAge = e.clamped ? 0 : Infinity
+        this.notice = e.clamped ? { text: this.texts.cast.tooFar, age: 0, at: null } : null
         break
       case 'phase':
         if (e.phase === 'idle') this.result = null
@@ -450,13 +463,16 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
       .setText(this.texts.hints[phase])
 
     // Ненавязчиво: мелко, над поплавком, и само гаснет
-    const tooFar = Phaser.Math.Clamp((TOO_FAR_SECONDS - this.tooFarAge) / 0.6, 0, 1)
-    this.tooFarText.setVisible(tooFar > 0 && !idle)
-    if (tooFar > 0) {
-      // Над поплавком, но целиком в экране: центр прижимается от краёв на половину ширины надписи
-      const t = this.tooFarText.setFontSize(fontSize * 0.7).setWordWrapWidth(w * 0.9).setAlpha(tooFar).setText(this.texts.cast.tooFar)
+    const notice = this.notice
+    const fade = notice ? Phaser.Math.Clamp((NOTICE_SECONDS - notice.age) / 0.6, 0, 1) : 0
+    // О броске — над поплавком, пока он в воде; о неподходящей удочке — там, куда нажали
+    const anchor = notice?.at ?? (idle ? null : castTarget)
+    this.noticeText.setVisible(fade > 0 && !!anchor)
+    if (notice && anchor && fade > 0) {
+      // Целиком в экране: центр прижимается от краёв на половину ширины надписи
+      const t = this.noticeText.setFontSize(fontSize * 0.7).setWordWrapWidth(w * 0.9).setAlpha(fade).setText(notice.text)
       const half = t.width / 2 + 8
-      t.setPosition(Phaser.Math.Clamp(castTarget.x, half, Math.max(half, w - half)), castTarget.y - fontSize * 1.6)
+      t.setPosition(Phaser.Math.Clamp(anchor.x, half, Math.max(half, w - half)), anchor.y - fontSize * 1.6)
     }
 
     this.fightText.setVisible(!!fight)
@@ -479,12 +495,13 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
   private drawZones(w: number, h: number, fontSize: number) {
     const g = this.gfx
     const { distToY, yToDist, perspective, castToX, photo } = this.water3d(w, h)
-    const reach = this.session.castLevels
+    // Удочка не годится для водоёма — закрыто всё
+    const reach = this.rodFits ? this.session.castLevels : 0
     // На ПК подсвечиваем место под мышью и показываем, куда ляжет поплавок. На телефоне наведения нет.
     const pointer = this.input.activePointer
     const px = pointer.x / this.pixelRatio
     const py = pointer.y / this.pixelRatio
-    const hover = !pointer.wasTouch && !this.panelOpen && py > 0 ? yToDist(py) : null
+    const hover = !pointer.wasTouch && !this.panelOpen && reach > 0 && py > 0 ? yToDist(py) : null
     const landing = hover === null ? null : Phaser.Math.Clamp(hover, DEFAULT_TUNING.castNear, this.session.maxCast)
     const hoverLevel = landing === null ? null : this.levelAt(landing)
     this.water.zones.forEach((zone, i) => {

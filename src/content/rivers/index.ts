@@ -91,21 +91,13 @@ const LAKE: WaterBody = {
   description: 'Глубокое и холодное. Крупная рыба — и крупный улов.',
   zones: [
     {
-      name: 'Заросли у берега',
-      depthM: 2,
-      spawns: withSizeSkew(1.3, [
-        { species: PERCH, rarity: 55 },
-        { species: PIKE, rarity: 45 },
-      ]),
-    },
-    {
-      name: 'Свал',
-      depthM: 5,
-      spawns: withSizeSkew(1, [
-        { species: PERCH, rarity: 25 },
-        { species: PIKE, rarity: 25 },
-        { species: BREAM, rarity: 30 },
-        { species: ZANDER, rarity: 20 },
+      name: 'Заросли и свал',
+      depthM: 3.5,
+      spawns: withSizeSkew(1.15, [
+        { species: PERCH, rarity: 35 },
+        { species: PIKE, rarity: 30 },
+        { species: BREAM, rarity: 20 },
+        { species: ZANDER, rarity: 15 },
       ]),
     },
     {
@@ -120,15 +112,17 @@ const LAKE: WaterBody = {
       ]),
     },
   ],
+  // У озера и у берега глубоко: бамбуковой тут делать нечего, болонская добросит до свала, до ямы — только фидер
+  minCastLevels: 2,
   palette: { sky: 0xa9c4d6, waterFar: 0x2a5d7c, water: 0x1b4560 },
-  // Заросли — светлая отмель между камышами, свал — край тёмного клина, яма — глубокая вода за ним
-  backdrop: { image: 'bg/lake.webp', waterline: 0.235, shore: 0.87, zoneEdges: [0.76, 0.62, 0.5, 0.3] },
+  // Заросли и свал — от светлой отмели до края тёмного клина, яма — глубокая вода за ним
+  backdrop: { image: 'bg/lake.webp', waterline: 0.235, shore: 0.87, zoneEdges: [0.76, 0.5, 0.3] },
 }
 
 // Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба
 const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
-const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку и озеро — до середины', castLevels: 2, sprite: 'sprites/rod-bolognese.webp' }
-const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к ямам, руслу и омутам', castLevels: 3, sprite: 'sprites/rod-feeder.webp' }
+const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp' }
+const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к руслу, омутам и глубокой яме озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp' }
 
 const LINE_02: Line = { id: 'mono02', name: 'Леска 0,2 мм', description: 'Для плотвы, карася и окуня', strength: 1 }
 const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3 }

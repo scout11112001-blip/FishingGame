@@ -1,4 +1,4 @@
-import type { ContentPack, PackTexts, WaterBody } from '../content/types.ts'
+import { weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { card, el } from './dom.ts'
 import { Sheet } from './Sheet.ts'
 import { formatDepth } from './units.ts'
@@ -39,6 +39,9 @@ export class WaterPanel {
     for (const water of this.pack.waters) {
       const selected = water.id === this.current.id
       const c = card(water.name, water.description, selected ? t.ui.selected : null, () => this.select(water))
+      // Удочку называем, только если подходит не любая
+      const rod = water.minCastLevels ? weakestFittingRod(this.pack, water) : undefined
+      if (rod) c.append(el('div', 'sheet-stat', t.cast.needsRod(rod.name)))
       for (const line of zoneLines(water, t)) c.append(el('div', 'sheet-fish', line))
       const li = el('li')
       li.append(c)

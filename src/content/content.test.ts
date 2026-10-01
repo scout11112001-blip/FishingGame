@@ -6,7 +6,7 @@ import { MAX_CAST_LEVELS } from '../core/FishingSession.ts'
 import { simulateLargest, simulateSpecies } from '../sim/simulate.ts'
 import { ALL_PACKS } from './index.ts'
 import { RIVERS } from './rivers/index.ts'
-import { tackleOf, type CastZone, type ContentPack, type Loadout } from './types.ts'
+import { rodFits, rodReach, tackleOf, weakestFittingRod, type CastZone, type ContentPack, type Loadout } from './types.ts'
 
 const maxBy = <T>(items: readonly T[], key: (t: T) => number) => items.reduce((a, b) => (key(b) > key(a) ? b : a))
 
@@ -34,8 +34,13 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, p
   it('у водоёмов от 1 до MAX_CAST_LEVELS мест ловли, и лучшая удочка добрасывает до последнего везде', () => {
     for (const water of pack.waters) expect(water.zones.length >= 1 && water.zones.length <= MAX_CAST_LEVELS).toBe(true)
     for (const rod of pack.rods) expect(rod.castLevels >= 1 && rod.castLevels <= MAX_CAST_LEVELS).toBe(true)
-    const deepest = Math.max(...pack.waters.map((w) => w.zones.length))
-    expect(Math.max(...pack.rods.map((r) => r.castLevels))).toBeGreaterThanOrEqual(deepest)
+    const best = maxBy(pack.rods, (r) => r.castLevels)
+    for (const water of pack.waters) expect(rodReach(water, best), water.name).toBeGreaterThanOrEqual(water.zones.length)
+  })
+
+  it('на каждом водоёме есть подходящая удочка, а в первом ловится стартовой', () => {
+    for (const water of pack.waters) expect(weakestFittingRod(pack, water), water.name).toBeDefined()
+    expect(rodFits(pack.waters[0], pack.starter.rod)).toBe(true)
   })
 
   it('отметки фоновой картинки идут от берега к горизонту и покрывают все места ловли', () => {
@@ -94,6 +99,14 @@ describe('пакет rivers', () => {
 
   it('вторая удочка добрасывает до конца пруда', () => {
     expect(RIVERS.rods[1].castLevels).toBeGreaterThanOrEqual(RIVERS.waters[0].zones.length)
+  })
+
+  it('на озере два места: бамбуковой нельзя, болонской — только первое, до ямы — фидером', () => {
+    const lake = RIVERS.waters[2]
+    expect(lake.zones.map((z) => z.spawns.length)).toEqual([4, 5])
+    expect(RIVERS.rods.map((r) => rodReach(lake, r))).toEqual([0, 1, 2])
+    expect(rodFits(lake, RIVERS.rods[0])).toBe(false)
+    expect(weakestFittingRod(RIVERS, lake)).toBe(RIVERS.rods[1])
   })
 })
 

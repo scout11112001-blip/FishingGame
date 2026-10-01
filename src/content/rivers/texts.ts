@@ -31,6 +31,7 @@ export const RIVERS_TEXTS: PackTexts = {
   cast: {
     locked: 'Нужна удочка дальнобойнее',
     tooFar: 'Дальше эта удочка не добросит',
+    needsRod: (rod) => `Здесь нужна ${rod.toLocaleLowerCase('ru')} или дальнобойнее`,
     zone: (name, depth) => `${name}, глубина ${depth}`,
   },
   ui: {
