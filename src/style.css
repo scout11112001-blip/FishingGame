@@ -196,6 +196,12 @@ body {
   cursor: pointer;
 }
 
+/* Закрытый водоём: виден, чтобы было к чему стремиться, но не выбирается */
+.sheet-card.locked {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .sheet-card.selected {
   border-color: var(--ui-ok);
   background: rgba(76, 175, 80, 0.16);
@@ -220,6 +226,35 @@ body {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Цена некупленной снасти — вместо метки «Выбрано» */
+.sheet-price {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--ui-stat);
+  color: #10364a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sheet-balance {
+  margin-top: 10px;
+  color: var(--ui-stat);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheet-buy {
+  margin-top: 8px;
+  color: var(--ui-stat);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sheet-card.locked .sheet-buy {
+  color: var(--ui-muted);
 }
 
 .sheet-card-desc {

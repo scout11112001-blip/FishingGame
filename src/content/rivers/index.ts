@@ -48,6 +48,8 @@ const RIVER: WaterBody = {
   id: 'river',
   name: 'Тихая река',
   description: 'Течение приносит щуку и судака, а в омутах живёт сом.',
+  // Опыт за рыбу: столько ловят примерно за 10 минут в пруду (бот — 42 рыбы, человек — чуть дольше)
+  unlockXp: 40,
   zones: [
     {
       name: 'У берега',
@@ -89,6 +91,8 @@ const LAKE: WaterBody = {
   id: 'lake',
   name: 'Лесное озеро',
   description: 'Глубокое и холодное. Крупная рыба — и крупный улов.',
+  // Примерно 2 часа игры при выгодных покупках снастей (бот к 2 часам ловит 389 рыб)
+  unlockXp: 400,
   zones: [
     {
       name: 'Заросли и свал',
@@ -119,21 +123,23 @@ const LAKE: WaterBody = {
   backdrop: { image: 'bg/lake.webp', waterline: 0.235, shore: 0.87, zoneEdges: [0.76, 0.5, 0.3] },
 }
 
+// Цены подобраны расчётом прогресса: первая покупка (леска) — ещё в пруду, болонская — сразу после открытия реки,
+// полная снасть — примерно за 7,5 часа игры. Без цены — стартовая снасть.
 // Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба
 const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
-const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp' }
-const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к руслу, омутам и глубокой яме озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp' }
+const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp', price: 300 }
+const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к руслу, омутам и глубокой яме озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp', price: 72000 }
 
 const LINE_02: Line = { id: 'mono02', name: 'Леска 0,2 мм', description: 'Для плотвы, карася и окуня', strength: 1 }
-const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3 }
-const BRAID: Line = { id: 'braid', name: 'Плетёнка', description: 'Для щуки и судака', strength: 1.7 }
+const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3, price: 150 }
+const BRAID: Line = { id: 'braid', name: 'Плетёнка', description: 'Для щуки и судака', strength: 1.7, price: 7000 }
 // Под крупного сома: без неё его рывок поднимает усилие быстрее, чем оно падает с отпущенным пальцем
-const CATFISH_CORD: Line = { id: 'catfishCord', name: 'Сомовий шнур', description: 'Выдержит рывки крупного сома', strength: 3.2 }
+const CATFISH_CORD: Line = { id: 'catfishCord', name: 'Сомовий шнур', description: 'Выдержит рывки крупного сома', strength: 3.2, price: 30000 }
 
 const BASIC_REEL: Reel = { id: 'basic', name: 'Простая катушка', description: 'Медленная, но своё дело делает', speed: 0.1 }
-const SPINNING_REEL: Reel = { id: 'spinning', name: 'Безынерционная катушка', description: 'Подматывает заметно быстрее', speed: 0.13 }
-const MULTIPLIER_REEL: Reel = { id: 'multiplier', name: 'Мультипликатор', description: 'Быстро вытаскивает даже тяжёлую рыбу', speed: 0.17 }
-const POWER_REEL: Reel = { id: 'power', name: 'Силовая катушка', description: 'Самая быстрая подмотка', speed: 0.2 }
+const SPINNING_REEL: Reel = { id: 'spinning', name: 'Безынерционная катушка', description: 'Подматывает заметно быстрее', speed: 0.13, price: 1500 }
+const MULTIPLIER_REEL: Reel = { id: 'multiplier', name: 'Мультипликатор', description: 'Быстро вытаскивает даже тяжёлую рыбу', speed: 0.17, price: 12000 }
+const POWER_REEL: Reel = { id: 'power', name: 'Силовая катушка', description: 'Самая быстрая подмотка', speed: 0.2, price: 40000 }
 
 // Прикормка — на рыбу покрупнее и подороже: за мелочью её не сыплют
 const BREAM_BAIT: Bait = {
@@ -169,6 +175,7 @@ export const RIVERS: ContentPack = {
     float: 'sprites/float.webp',
     floatAboveWater: 0.3,
     fish: Object.fromEntries(ALL_FISH.map((f) => [f.id, `sprites/${f.id}.webp`])),
+    silver: 'sprites/silver.webp',
   },
   texts: RIVERS_TEXTS,
 }

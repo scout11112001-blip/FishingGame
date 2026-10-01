@@ -2,7 +2,7 @@ import type { PackTexts } from '../types.ts'
 
 export const RIVERS_TEXTS: PackTexts = {
   wallet: 'Серебро',
-  catchCount: 'Улов',
+  xp: 'Опыт⭐',
   hints: {
     idle: 'Нажми на воду туда, куда забросить',
     casting: '',
@@ -43,6 +43,9 @@ export const RIVERS_TEXTS: PackTexts = {
     title: 'Снасти',
     tabs: { rod: 'Удочка', line: 'Леска', reel: 'Катушка' },
     stats: { strength: 'Прочность', speed: 'Скорость подмотки' },
+    balance: (silver) => `У тебя ${silver} серебра`,
+    buy: (price) => `Купить за ${price} серебра`,
+    notEnough: (left) => `Не хватает ${left} серебра`,
   },
   bait: {
     button: 'Прикормка',
@@ -56,5 +59,7 @@ export const RIVERS_TEXTS: PackTexts = {
     button: 'Водоём',
     title: 'Водоёмы',
     zone: (name, depth, fish) => `${name}, глубина ${depth}: ${fish}`,
+    locked: (xp, left) => `🔒 Откроется на ${xp} опыта — осталось ${left}`,
+    opened: (name) => `Открыт новый водоём: ${name}!`,
   },
 }

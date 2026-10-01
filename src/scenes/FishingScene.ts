@@ -3,12 +3,14 @@ import type { HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
 import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
+import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
+import { Shop } from '../content/shop.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
 import { WaterPanel } from '../ui/WaterPanel.ts'
-import { formatDepth, formatDuration, toMeters } from '../ui/units.ts'
+import { formatDepth, formatDuration, formatSilver, toMeters } from '../ui/units.ts'
 
 /** Дальняя граница отрисовки воды в единицах дистанции (равна длине лески). */
 const MAX_DRAW_DISTANCE = 1.5
@@ -39,7 +41,7 @@ const COLOR = {
   white: 0xffffff,
 }
 
-type Result = { kind: 'caught'; fish: HookedFish; price: number } | { kind: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
+type Result = { kind: 'caught'; fish: HookedFish; price: number; opened: readonly WaterBody[] } | { kind: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
 
 export class FishingScene extends Phaser.Scene {
   private session!: FishingSession
@@ -59,7 +61,11 @@ export class FishingScene extends Phaser.Scene {
   /** Фоновая картинка водоёма; у водоёма без картинки — скрыта, вместо неё заливка из палитры. */
   private bg!: Phaser.GameObjects.Image
   private statusText!: Phaser.GameObjects.Text
+  /** Строка счётчиков: «Серебро», значок монеты, остальное. Под ней — прикормка. */
+  private walletLabel!: Phaser.GameObjects.Text
+  private silverIcon!: Phaser.GameObjects.Image
   private walletText!: Phaser.GameObjects.Text
+  private baitText!: Phaser.GameObjects.Text
   private fightText!: Phaser.GameObjects.Text
   private resultText!: Phaser.GameObjects.Text
   private noticeText!: Phaser.GameObjects.Text
@@ -81,8 +87,10 @@ export class FishingScene extends Phaser.Scene {
   /** Водоём, снасть или прикормка сменились, а сессия ещё не в покое и не приняла их — пробуем каждый кадр. */
   private equipPending = false
 
-  private silver = 0
-  private catches = 0
+  /** Серебро и купленные снасти. */
+  private readonly shop = new Shop(this.pack)
+  /** Опыт — по рыбе за рыбу; открывает водоёмы. */
+  private xp = 0
   private elapsed = 0
   private nibbleAge = Infinity
   /** Ненавязчивое предупреждение: над поплавком (at = null) или там, куда нажали. Само гаснет. */
@@ -99,6 +107,7 @@ export class FishingScene extends Phaser.Scene {
     const art = this.pack.art
     if (art) {
       this.load.image(FLOAT_KEY, art.float)
+      if (art.silver) this.load.image(SILVER_KEY, art.silver)
       for (const [id, path] of Object.entries(art.fish)) this.load.image(fishKey(id), path)
     }
   }
@@ -135,16 +144,19 @@ export class FishingScene extends Phaser.Scene {
     this.fightText = text()
     this.resultText = text()
     this.noticeText = text()
+    this.walletLabel = text().setOrigin(0, 0).setAlign('left')
     this.walletText = text().setOrigin(0, 0).setAlign('left')
+    this.baitText = text().setOrigin(0, 0).setAlign('left')
+    this.silverIcon = this.add.image(0, 0, this.textures.exists(SILVER_KEY) ? SILVER_KEY : '__DEFAULT').setOrigin(0, 0.5)
     // С запасом на водоём с наибольшим числом мест; лишние просто не показываем
     this.zoneTexts = Array.from({ length: MAX_CAST_LEVELS }, () => text().setOrigin(1, 0.5).setAlign('right'))
 
     // Интерфейс вне боя — HTML поверх игры: кнопки внизу и панели выбора
-    this.tacklePanel = new TacklePanel(this.pack, this.loadout, (loadout) => {
+    this.tacklePanel = new TacklePanel(this.pack, this.loadout, this.shop, (loadout) => {
       this.loadout = loadout
       this.equip()
     })
-    this.waterPanel = new WaterPanel(this.pack, this.water, (water) => {
+    this.waterPanel = new WaterPanel(this.pack, this.water, () => this.xp, (water) => {
       this.water = water
       this.equip()
     })
@@ -250,14 +262,35 @@ export class FishingScene extends Phaser.Scene {
     this.equipPending = !this.session.equip(zonesFor(this.water, this.bait, Date.now()), tackleOf(this.loadout, this.water))
   }
 
-  /** Строка счётчиков, а под ней — сколько ещё действует прикормка. */
-  private walletLine(): string {
-    const line = `${this.texts.wallet}: ${this.silver}   ${this.texts.catchCount}: ${this.catches}`
+  /**
+   * Счётчики в левом верхнем углу: «Серебро», значок монеты сразу за словом, дальше сумма и опыт.
+   * Под ними — сколько ещё действует прикормка.
+   */
+  private drawWallet(size: number) {
+    const x0 = 12
+    const y0 = 10
+    const label = this.walletLabel.setFontSize(size).setPosition(x0, y0).setText(this.texts.wallet)
+    let x = x0 + label.width
+    const icon = this.silverIcon
+    icon.setVisible(this.textures.exists(SILVER_KEY))
+    if (icon.visible) {
+      // Монета — по высоте строки, без учёта обводки текста
+      const h = size * 1.05
+      icon.setScale(h / icon.height).setPosition(x, y0 + label.height / 2)
+      x += h
+    }
+    // Опыт — с порогом ближайшего закрытого водоёма: видно, сколько осталось
+    const next = nextLockedWater(this.pack, this.xp)
+    const xp = next ? `${this.xp} / ${next.unlockXp}` : `${this.xp}`
+    this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.shop.silver)}   ${this.texts.xp}: ${xp}`)
+
     const now = Date.now()
-    if (!isBaitActive(this.bait, now)) return line
-    const { bait, until } = this.bait
-    return `${line}
-${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.water, bait.species))}`
+    const bait = isBaitActive(this.bait, now) ? this.bait : null
+    this.baitText.setVisible(!!bait)
+    if (bait) {
+      const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.water, bait.bait.species))
+      this.baitText.setFontSize(size).setPosition(x0, y0 + label.height).setText(status)
+    }
   }
 
   /**
@@ -347,9 +380,9 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
         this.nibbleAge = 0
         break
       case 'caught':
-        this.silver += e.price
-        this.catches++
-        this.result = { kind: 'caught', fish: e.fish, price: e.price }
+        this.shop.earn(e.price)
+        this.xp += XP_PER_FISH
+        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: newlyOpened(this.pack, this.xp - XP_PER_FISH, this.xp) }
         break
       case 'escaped':
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
@@ -450,10 +483,7 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
     this.drawRod(butt, tip, end, bend, w, h)
 
     // Интерфейс
-    this.walletText
-      .setFontSize(fontSize * 0.8)
-      .setPosition(12, 10)
-      .setText(this.walletLine())
+    this.drawWallet(fontSize * 0.8)
     this.hud.setVisible(idle)
     this.statusText
       .setWordWrapWidth(w * 0.9)
@@ -713,6 +743,7 @@ ${this.texts.bait.status(bait.name, formatDuration(until - now), baitWorks(this.
 type Point = { x: number; y: number }
 
 const FLOAT_KEY = 'float'
+const SILVER_KEY = 'silver'
 
 function fishKey(speciesId: string): string {
   return `fish-${speciesId}`
@@ -747,7 +778,7 @@ function effortColor(f: FightView): number {
 }
 
 function resultMessage(r: Result, texts: PackTexts): string {
-  if (r.kind === 'caught') return texts.caught(r.fish, r.price)
+  if (r.kind === 'caught') return [texts.caught(r.fish, r.price), ...r.opened.map((w) => texts.waters.opened(w.name))].join('\n')
   // Сорвавшуюся рыбу показываем, только если она успела клюнуть — это стимул закинуть снова
   const lost = r.fish && r.reason !== 'tooEarly' ? '\n' + texts.lost(r.fish) : ''
   return texts.escape[r.reason] + lost

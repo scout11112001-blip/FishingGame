@@ -49,6 +49,8 @@ interface Job {
 
 const JOBS: Job[] = [
   { src: 'float.jpg', out: 'float', size: 512 },
+  // Значок серебра в строке счётчиков: на экране около 20 px, 128 — с запасом на плотный экран
+  { src: 'silver.jpg', out: 'silver', size: 128 },
   { src: 'rod1.jpg', out: 'rod-bamboo', size: 1024 },
   { src: 'rod2.jpg', out: 'rod-bolognese', size: 1024 },
   { src: 'rod3.jpg', out: 'rod-feeder', size: 1024 },

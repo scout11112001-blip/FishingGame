@@ -58,7 +58,7 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, p
     const files = [
       ...pack.waters.flatMap((w) => (w.backdrop ? [w.backdrop.image] : [])),
       ...pack.rods.flatMap((r) => (r.sprite ? [r.sprite] : [])),
-      ...(pack.art ? [pack.art.float, ...Object.values(pack.art.fish)] : []),
+      ...(pack.art ? [pack.art.float, ...Object.values(pack.art.fish), ...(pack.art.silver ? [pack.art.silver] : [])] : []),
     ]
     for (const file of files) expect(existsSync(`public/${file}`), file).toBe(true)
     if (pack.art) for (const fish of pack.fish) expect(pack.art.fish[fish.id], fish.name).toBeDefined()

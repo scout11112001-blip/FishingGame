@@ -5,6 +5,11 @@ export function toMeters(distance: number): number {
   return Math.max(0, Math.round(distance * METERS_PER_UNIT))
 }
 
+/** Сумма серебра: «72 000» — с неразрывным пробелом между тысячами. */
+export function formatSilver(amount: number): string {
+  return Math.round(amount).toLocaleString('ru-RU')
+}
+
 /** Глубина для подписи: «3,5 м». */
 export function formatDepth(meters: number): string {
   return `${String(meters).replace('.', ',')} м`

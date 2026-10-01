@@ -10,7 +10,7 @@ export interface ContentPack {
   title: string
   /** Все виды рыб обёртки — понадобятся для коллекции. */
   fish: readonly FishSpecies[]
-  /** Водоёмы в порядке открытия. */
+  /** Водоёмы в порядке открытия (см. unlockXp). */
   waters: readonly WaterBody[]
   rods: readonly Rod[]
   lines: readonly Line[]
@@ -31,12 +31,16 @@ export interface PackArt {
   floatAboveWater: number
   /** Рыбы по id вида: вид строго сбоку, голова влево. */
   fish: Readonly<Record<string, string>>
+  /** Значок серебра — после слова «Серебро» в строке счётчиков. Без него — только слово. */
+  silver?: string
 }
 
 export interface WaterBody {
   id: string
   name: string
   description?: string
+  /** Сколько опыта нужно, чтобы водоём открылся. Нет — открыт с начала. Опыт — по XP_PER_FISH за рыбу (progress.ts). */
+  unlockXp?: number
   /**
    * Места ловли по уровням заброса (1..MAX_CAST_LEVELS): от берега к глубине. Диапазон заброса делится
    * между ними поровну, так что в водоёме с двумя местами каждое шире.
@@ -112,6 +116,8 @@ export interface Rod {
   description?: string
   /** 1..MAX_CAST_LEVELS. В водоёме с меньшим числом мест добрасывает до последнего. */
   castLevels: number
+  /** Цена в серебре. Нет — есть у игрока с начала. */
+  price?: number
   /** Картинка удочки относительно public/: прямая, вертикальная, рукоять внизу. Без неё удочка — линия. */
   sprite?: string
 }
@@ -122,6 +128,8 @@ export interface Line {
   name: string
   description?: string
   strength: number
+  /** Цена в серебре. Нет — есть у игрока с начала. */
+  price?: number
 }
 
 /** Катушка задаёт скорость подмотки. */
@@ -130,6 +138,8 @@ export interface Reel {
   name: string
   description?: string
   speed: number
+  /** Цена в серебре. Нет — есть у игрока с начала. */
+  price?: number
 }
 
 /**
@@ -159,7 +169,7 @@ export function tackleOf({ rod, line, reel }: Loadout, water?: WaterBody): Tackl
 export interface PackTexts {
   /** Подписи счётчиков в углу экрана. */
   wallet: string
-  catchCount: string
+  xp: string
   hints: Record<Phase, string>
   escape: Record<EscapeReason, string>
   warnings: {
@@ -190,6 +200,11 @@ export interface PackTexts {
     title: string
     tabs: Record<keyof Loadout, string>
     stats: { strength: string; speed: string }
+    /** Сколько серебра у игрока — вверху магазина. */
+    balance: (silver: string) => string
+    /** Некупленный предмет: хватает серебра — предложение купить, нет — сколько не хватает. */
+    buy: (price: string) => string
+    notEnough: (left: string) => string
   }
   bait: {
     button: string
@@ -207,5 +222,9 @@ export interface PackTexts {
     title: string
     /** Подпись места ловли с глубиной и рыбой: новая на этом месте рыба идёт с «+». */
     zone: (name: string, depth: string, fish: string) => string
+    /** Закрытый водоём в списке: сколько опыта нужно и сколько ещё осталось набрать. */
+    locked: (xp: number, left: number) => string
+    /** На экране улова, когда эта рыба открыла новый водоём. */
+    opened: (name: string) => string
   }
 }
