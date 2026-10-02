@@ -140,6 +140,27 @@ export class AchievementLog {
   markSeen(id: string): void {
     this.unseen.delete(id)
   }
+
+  /** Полученные и непросмотренные — для сохранения. */
+  ids(): { done: string[]; unseen: string[] } {
+    return { done: [...this.done], unseen: [...this.unseen] }
+  }
+
+  /**
+   * Восстановить из сохранения. Неизвестные id пропускаем. Достижения, которые по статистике уже выполнены,
+   * но не засчитаны (их добавили в обновлении игры), засчитываем сразу — с восклицательным знаком.
+   */
+  restore(stats: PlayerStats, done: readonly string[], unseen: readonly string[]): void {
+    Object.assign(this.stats, stats)
+    const known = new Set(this.list.map((a) => a.id))
+    for (const id of done) if (known.has(id)) this.done.add(id)
+    for (const id of unseen) if (this.done.has(id)) this.unseen.add(id)
+    for (const a of this.list) {
+      if (this.done.has(a.id) || !isDone(a, this.stats)) continue
+      this.done.add(a.id)
+      this.unseen.add(a.id)
+    }
+  }
 }
 
 /** «0,59» — вес в подписи достижения. */

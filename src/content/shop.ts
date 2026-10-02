@@ -43,6 +43,30 @@ export class Shop {
     return this.owns(slot, item) ? 0 : Math.max(0, (item.price ?? 0) - this._silver)
   }
 
+  /** Купленное по слотам — id предметов, для сохранения. */
+  ownedIds(): Record<Slot, string[]> {
+    const ids: Record<Slot, string[]> = { rod: [], line: [], reel: [] }
+    for (const key of this.owned) {
+      const [slot, id] = key.split(':') as [Slot, string]
+      ids[slot].push(id)
+    }
+    return ids
+  }
+
+  /**
+   * Восстановить из сохранения: серебро и купленное поверх того, что есть с начала.
+   * Неизвестные id (предмет убрали из игры) пропускаем, серебро — целое и не меньше нуля.
+   */
+  restore(pack: ContentPack, silver: number, owned: Partial<Record<Slot, readonly string[]>>): void {
+    this._silver = Number.isFinite(silver) ? Math.max(0, Math.floor(silver)) : 0
+    for (const slot of SLOTS) {
+      for (const id of owned[slot] ?? []) {
+        const item = itemsOf(pack, slot).find((i) => i.id === id)
+        if (item) this.owned.add(keyOf(slot, item))
+      }
+    }
+  }
+
   /** Купить, если хватает серебра. Уже купленный — true без списания. */
   buy(slot: Slot, item: TackleItem): boolean {
     if (this.owns(slot, item)) return true

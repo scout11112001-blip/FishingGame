@@ -1,14 +1,13 @@
 import Phaser from 'phaser'
 import { makeFish, rollFish, type HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
-import { AchievementLog } from '../content/achievements.ts'
-import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor, type ActiveBait } from '../content/bait.ts'
+import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor } from '../content/bait.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
-import { Shop } from '../content/shop.ts'
+import type { PlayerState } from '../content/player.ts'
 import { LAST_STEP, TUTORIAL_FISH_SIZE, TUTORIAL_TUNING, Tutorial, type TutorialTarget } from '../content/tutorial.ts'
 import { SANDBOX } from '../sandbox.ts'
-import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type Loadout, type PackTexts, type WaterBody } from '../content/types.ts'
+import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { Hud } from '../ui/Hud.ts'
@@ -92,28 +91,23 @@ export class FishingScene extends Phaser.Scene {
   private tutorialOverlay!: TutorialOverlay
 
   private readonly pack: ContentPack = ACTIVE_PACK
-  private water: WaterBody = this.pack.waters[0]
-  private loadout: Loadout = this.pack.starter
-  private bait: ActiveBait | null = null
+  /** Прогресс игрока: серебро, снасти, опыт, водоём, прикормка, достижения. Его же сохраняет автосохранение. */
+  private readonly player: PlayerState
   /** Водоём, снасть или прикормка сменились, а сессия ещё не в покое и не приняла их — пробуем каждый кадр. */
   private equipPending = false
 
-  /** Серебро и купленные снасти. */
-  private readonly shop = new Shop(this.pack, SANDBOX)
   /** Обучение на первом забросе; null — уже пройдено. В тестовой версии его нет. */
-  private tutorial: Tutorial | null = SANDBOX ? null : new Tutorial()
-  /** Статистика улова и достижения. */
-  private readonly achievements = new AchievementLog(this.pack)
-  /** Опыт — по рыбе за рыбу; открывает водоёмы. */
-  private xp = 0
+  private tutorial: Tutorial | null
   private elapsed = 0
   private nibbleAge = Infinity
   /** Ненавязчивое предупреждение: над поплавком (at = null) или там, куда нажали. Само гаснет. */
   private notice: { text: string; age: number; at: Point | null } | null = null
   private result: Result | null = null
 
-  constructor() {
+  constructor(player: PlayerState) {
     super('FishingScene')
+    this.player = player
+    this.tutorial = SANDBOX || player.tutorialDone ? null : new Tutorial()
   }
 
   preload() {
@@ -129,8 +123,8 @@ export class FishingScene extends Phaser.Scene {
 
   create() {
     this.session = new FishingSession({
-      zones: zonesFor(this.water, this.bait, Date.now()),
-      tackle: tackleOf(this.loadout, this.water),
+      zones: zonesFor(this.player.water, this.player.bait, Date.now()),
+      tackle: tackleOf(this.player.loadout, this.player.water),
       tuning: this.tutorial ? TUTORIAL_TUNING : DEFAULT_TUNING,
       // В обучении клюёт самая частая рыба места, покрупнее средней: бой подольше, рывок заметен
       pickFish: (rng, spawns) =>
@@ -175,25 +169,25 @@ export class FishingScene extends Phaser.Scene {
     this.zoneTexts = Array.from({ length: MAX_CAST_LEVELS }, () => text().setOrigin(1, 0.5).setAlign('right'))
 
     // Интерфейс вне боя — HTML поверх игры: кнопки внизу и панели выбора
-    this.tacklePanel = new TacklePanel(this.pack, this.loadout, this.shop, (loadout) => {
-      this.loadout = loadout
+    this.tacklePanel = new TacklePanel(this.pack, this.player.loadout, this.player.shop, (loadout) => {
+      this.player.loadout = loadout
       this.equip()
     })
     this.waterPanel = new WaterPanel(
       this.pack,
-      this.water,
-      () => this.xp,
+      this.player.water,
+      () => this.player.xp,
       (water) => {
-        this.water = water
+        this.player.water = water
         this.equip()
       },
       SANDBOX,
     )
     this.baitPanel = new BaitPanel(
       this.pack,
-      () => this.bait,
+      () => this.player.bait,
       (bait) => {
-        this.bait = { bait, until: Date.now() + BAIT_DURATION_MS }
+        this.player.bait = { bait, until: Date.now() + BAIT_DURATION_MS }
         this.equip()
       },
     )
@@ -201,7 +195,7 @@ export class FishingScene extends Phaser.Scene {
     this.hudButtons.set('tackleButton', this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open()))
     this.hudButtons.set('waterButton', this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open()))
     this.hudButtons.set('baitButton', this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open()))
-    this.achievementPanel = new AchievementPanel(this.pack, this.achievements)
+    this.achievementPanel = new AchievementPanel(this.pack, this.player.achievements)
     this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
     this.hudButtons.set('achievementsButton', this.achievementButton)
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
@@ -243,8 +237,8 @@ export class FishingScene extends Phaser.Scene {
     if (this.notice) this.notice.age += dt
     this.steerWithKeys(dt)
     // Прикормка кончилась — рыба возвращается на свои места. Начатый заброс доловим с прикормкой
-    if (this.bait && !isBaitActive(this.bait, Date.now())) {
-      this.bait = null
+    if (this.player.bait && !isBaitActive(this.player.bait, Date.now())) {
+      this.player.bait = null
       this.equipPending = true
     }
     if (this.equipPending) this.equip()
@@ -297,7 +291,7 @@ export class FishingScene extends Phaser.Scene {
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
   private equip() {
-    this.equipPending = !this.session.equip(zonesFor(this.water, this.bait, Date.now()), tackleOf(this.loadout, this.water))
+    this.equipPending = !this.session.equip(zonesFor(this.player.water, this.player.bait, Date.now()), tackleOf(this.player.loadout, this.player.water))
   }
 
   /**
@@ -319,19 +313,19 @@ export class FishingScene extends Phaser.Scene {
     }
     // Опыт — с порогом ближайшего закрытого водоёма: видно, сколько осталось
     // В тестовой версии водоёмы открыты с начала — порога нет
-    const next = SANDBOX ? undefined : nextLockedWater(this.pack, this.xp)
-    const xp = next ? `${this.xp} / ${next.unlockXp}` : `${this.xp}`
-    const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.shop.silver)}`)
+    const next = SANDBOX ? undefined : nextLockedWater(this.pack, this.player.xp)
+    const xp = next ? `${this.player.xp} / ${next.unlockXp}` : `${this.player.xp}`
+    const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.player.shop.silver)}`)
     this.xpText
       .setFontSize(size)
       .setPosition(x + silver.width + size * 1.2, y0)
       .setText(`${this.texts.xp}: ${xp}`)
 
     const now = Date.now()
-    const bait = isBaitActive(this.bait, now) ? this.bait : null
+    const bait = isBaitActive(this.player.bait, now) ? this.player.bait : null
     this.baitText.setVisible(!!bait)
     if (bait) {
-      const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.water, bait.bait.species))
+      const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.player.water, bait.bait.species))
       this.baitText.setFontSize(size).setPosition(x0, y0 + label.height).setText(status)
     }
   }
@@ -341,8 +335,8 @@ export class FishingScene extends Phaser.Scene {
    * (на очень широком экране — наоборот, по ширине с обрезкой сверху и снизу). null — картинки нет.
    */
   private backdropRect(w: number, h: number) {
-    if (!this.water.backdrop || !this.textures.exists(backdropKey(this.water))) return null
-    const frame = this.textures.getFrame(backdropKey(this.water))
+    if (!this.player.water.backdrop || !this.textures.exists(backdropKey(this.player.water))) return null
+    const frame = this.textures.getFrame(backdropKey(this.player.water))
     const scale = Math.max(w / frame.width, h / frame.height)
     const dw = frame.width * scale
     const dh = frame.height * scale
@@ -357,7 +351,7 @@ export class FishingScene extends Phaser.Scene {
     // Опорные точки «дистанция → экранная Y». С картинкой — по отметкам на ней: места ловли ложатся
     // на нарисованные глубины. Без картинки — участок заброса растянут почти на полэкрана.
     const rect = this.backdropRect(w, h)
-    const b = this.water.backdrop
+    const b = this.player.water.backdrop
     const { castNear, castFar } = DEFAULT_TUNING
     let points: [number, number][]
     if (rect && b) {
@@ -437,16 +431,17 @@ export class FishingScene extends Phaser.Scene {
   private finishTutorial() {
     if (!this.tutorial?.done || !this.session.setTuning(DEFAULT_TUNING)) return
     this.tutorial = null
+    this.player.tutorialDone = true
     this.tutorialOverlay.hide()
   }
 
   /** Можно ли текущей удочкой ловить на текущем водоёме: на озеро с бамбуковой не забросишь. */
   private get rodFits(): boolean {
-    return rodFits(this.water, this.loadout.rod)
+    return rodFits(this.player.water, this.player.loadout.rod)
   }
 
   private warnWeakRod(at: Point) {
-    const rod = weakestFittingRod(this.pack, this.water)
+    const rod = weakestFittingRod(this.pack, this.player.water)
     this.notice = { text: rod ? this.texts.cast.needsRod(rod.name) : this.texts.cast.locked, age: 0, at }
   }
 
@@ -456,10 +451,10 @@ export class FishingScene extends Phaser.Scene {
         this.nibbleAge = 0
         break
       case 'caught':
-        this.shop.earn(e.price)
-        this.xp += XP_PER_FISH
-        this.achievements.onCatch(e.fish, this.xp)
-        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: SANDBOX ? [] : newlyOpened(this.pack, this.xp - XP_PER_FISH, this.xp) }
+        this.player.shop.earn(e.price)
+        this.player.xp += XP_PER_FISH
+        this.player.achievements.onCatch(e.fish, this.player.xp)
+        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: SANDBOX ? [] : newlyOpened(this.pack, this.player.xp - XP_PER_FISH, this.player.xp) }
         break
       case 'escaped':
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
@@ -493,11 +488,11 @@ export class FishingScene extends Phaser.Scene {
     const rect = this.backdropRect(w, h)
     this.bg.setVisible(!!rect)
     if (rect) {
-      const key = backdropKey(this.water)
+      const key = backdropKey(this.player.water)
       if (this.bg.texture.key !== key) this.bg.setTexture(key)
       this.bg.setPosition(rect.x, rect.y).setDisplaySize(rect.w, rect.h)
     } else {
-      const palette = this.water.palette
+      const palette = this.player.water.palette
       g.fillStyle(palette.sky).fillRect(0, 0, w, horizon)
       g.fillStyle(palette.waterFar).fillRect(0, horizon, w, h * 0.06)
       g.fillStyle(palette.water).fillRect(0, horizon + h * 0.06, w, h - horizon)
@@ -505,7 +500,7 @@ export class FishingScene extends Phaser.Scene {
 
     // Места ловли: пока игрок решает, куда бросать, — видно, где что и куда не добросить
     const idle = phase === 'idle'
-    this.zoneTexts.forEach((t, i) => t.setVisible(idle && i < this.water.zones.length))
+    this.zoneTexts.forEach((t, i) => t.setVisible(idle && i < this.player.water.zones.length))
     if (idle) this.drawZones(w, h, fontSize)
 
     // Удочка наклоняется туда, куда отведён палец, и гнётся от усилия.
@@ -563,7 +558,7 @@ export class FishingScene extends Phaser.Scene {
     // Интерфейс
     this.drawWallet(fontSize * 0.8)
     this.hud.setVisible(idle && (!this.tutorial || !!this.tutorial.step?.hud))
-    this.hud.setAlert(this.achievementButton, this.achievements.hasUnseen)
+    this.hud.setAlert(this.achievementButton, this.player.achievements.hasUnseen)
     this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
@@ -607,7 +602,7 @@ export class FishingScene extends Phaser.Scene {
     let card
     if (step.id === 'silver') card = t.silver(formatSilver(this.result?.kind === 'caught' ? this.result.price : 0))
     else if (step.id === 'xp') {
-      const next = nextLockedWater(this.pack, this.xp)
+      const next = nextLockedWater(this.pack, this.player.xp)
       card = t.xp(next?.name ?? null, next?.unlockXp ?? 0)
     } else card = t.steps[step.id]
     // Сход: сразу и почему — экран итога под затемнением не прочитать
@@ -624,14 +619,14 @@ export class FishingScene extends Phaser.Scene {
       pad({ x: from.x, y: from.y, w: to.x + to.width - from.x, h: Math.max(from.height, to.height) })
     const { distToY } = this.water3d(w, h)
     const band = (fromLevel: number, toLevel: number): Rect => {
-      const levels = this.water.zones.length
+      const levels = this.player.water.zones.length
       const top = distToY(castLevelRange(toLevel, levels)[1])
       const bottom = distToY(castLevelRange(fromLevel, levels)[0])
       return { x: 4, y: top, w: w - 8, h: bottom - top }
     }
     switch (target) {
       case 'water':
-        return band(0, this.water.zones.length - 1)
+        return band(0, this.player.water.zones.length - 1)
       case 'nearZone':
         return band(0, 0)
       case 'float': {
@@ -676,8 +671,8 @@ export class FishingScene extends Phaser.Scene {
     const hover = !pointer.wasTouch && !this.panelOpen && reach > 0 && py > 0 ? yToDist(py) : null
     const landing = hover === null ? null : Phaser.Math.Clamp(hover, DEFAULT_TUNING.castNear, this.session.maxCast)
     const hoverLevel = landing === null ? null : this.levelAt(landing)
-    this.water.zones.forEach((zone, i) => {
-      const [from, to] = castLevelRange(i, this.water.zones.length)
+    this.player.water.zones.forEach((zone, i) => {
+      const [from, to] = castLevelRange(i, this.player.water.zones.length)
       const bottom = distToY(from)
       const top = distToY(to)
       const locked = i >= reach
@@ -705,7 +700,7 @@ export class FishingScene extends Phaser.Scene {
 
   /** Уровень места ловли по дистанции — как его считает ядро. */
   private levelAt(distance: number): number {
-    const levels = this.water.zones.length
+    const levels = this.player.water.zones.length
     for (let i = 0; i < levels; i++) if (distance < castLevelRange(i, levels)[1]) return i
     return levels - 1
   }
@@ -852,7 +847,7 @@ export class FishingScene extends Phaser.Scene {
    * Без картинки — прямая линия, как раньше.
    */
   private drawRod(butt: Point, tip: Point, end: Point | null, bend: number, w: number, h: number) {
-    const current = this.rods.get(this.loadout.rod.id)
+    const current = this.rods.get(this.player.loadout.rod.id)
     for (const rope of this.rods.values()) rope.setVisible(rope === current)
     if (!current) {
       this.lineGfx.lineStyle(Math.max(4, w * 0.008), COLOR.rod).lineBetween(butt.x, butt.y, tip.x, tip.y)
