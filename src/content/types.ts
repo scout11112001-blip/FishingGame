@@ -1,5 +1,6 @@
 import type { FishSpawn, FishSpecies, HookedFish } from '../core/fish.ts'
 import type { CastZones, EscapeReason, Phase, Tackle } from '../core/FishingSession.ts'
+import type { DailyReward } from './daily.ts'
 import type { TutorialStepId } from './tutorial.ts'
 
 /**
@@ -16,8 +17,10 @@ export interface ContentPack {
   rods: readonly Rod[]
   lines: readonly Line[]
   reels: readonly Reel[]
-  /** Прикормки: на время чаще клюёт одна рыба. */
+  /** Прикормки: на время чаще клюёт одна рыба. Берутся из запаса — его пополняет награда за вход. */
   baits: readonly Bait[]
+  /** Награды за вход по дням серии: пропустил день — серия сначала, прошёл все — по кругу. */
+  daily: readonly DailyReward[]
   starter: Loadout
   texts: PackTexts
   /** Картинки поплавка и рыб. Без них сцена рисует простые фигуры. */
@@ -228,6 +231,20 @@ export interface PackTexts {
     left: (time: string) => string
     /** Строка под счётчиками, пока прикормка действует; works — водится ли её рыба в текущем водоёме. */
     status: (name: string, time: string, works: boolean) => string
+    /** Сколько таких прикормок в запасе; пусто — где взять. */
+    stock: (count: number) => string
+    empty: string
+    /** Кнопка у пустого запаса: прикормка за просмотр рекламы. */
+    getNow: string
+    /** У прикормки в запасе, пока действует другая (или эта же). */
+    busy: string
+  }
+  daily: {
+    title: string
+    /** Под заголовком: как устроена серия. */
+    note: string
+    day: (n: number) => string
+    claim: string
   }
   tutorial: {
     /** Внизу карточки, которая закрывается тапом. */

@@ -131,4 +131,76 @@ describe('сохранение прогресса', () => {
     expect(p.achievements.isUnseen('catches-1')).toBe(true)
     expect(p.achievements.isDone('record-pike')).toBe(true)
   })
+
+  it('старое сохранение без запаса прикормок и серии входов читается: их просто нет', () => {
+    const old: Record<string, unknown> = { ...new PlayerState(RIVERS).toSave(), silver: 300 }
+    delete old.baitStock
+    delete old.daily
+    const p = new PlayerState(RIVERS)
+    p.restore(parseSave(JSON.stringify(old))!, NOW)
+    expect(p.shop.silver).toBe(300)
+    expect(p.baitStock).toEqual({})
+    expect(p.daily).toEqual({ lastDay: null, streak: 0 })
+  })
+
+  it('запас прикормок и серия входов переживают перезагрузку, мусор отбрасывается', () => {
+    const p = new PlayerState(RIVERS)
+    p.claimDaily('2026-10-01')
+    p.claimDaily('2026-10-02')
+    const after = reload(p, NOW, (d) => {
+      d.baitStock.kraken = 5
+      d.baitStock.zander = -3
+    })
+    expect(after.baitStock).toEqual({ bream: 1 })
+    expect(after.daily).toEqual({ lastDay: '2026-10-02', streak: 2 })
+    expect(reload(p, NOW, (d) => (d.daily.lastDay = 'вчера')).daily.lastDay).toBeNull()
+  })
+})
+
+describe('награда за вход и запас прикормок', () => {
+  it('награда дня: серебро и прикормка в запас; второй раз за день — ничего', () => {
+    const p = new PlayerState(RIVERS)
+    expect(p.claimDaily('2026-10-01')).toEqual(RIVERS.daily[0])
+    expect(p.shop.silver).toBe(200)
+    expect(p.claimDaily('2026-10-01')).toBeNull()
+    expect(p.shop.silver).toBe(200)
+
+    p.claimDaily('2026-10-02')
+    expect(p.shop.silver).toBe(400)
+    expect(p.baitCount(RIVERS.baits[0])).toBe(1)
+  })
+
+  it('прикормка берётся из запаса; пустой запас — не включить', () => {
+    const p = new PlayerState(RIVERS)
+    const bream = RIVERS.baits[0]
+    expect(p.useBait(bream, NOW)).toBe(false)
+    expect(p.bait).toBeNull()
+
+    p.baitStock[bream.id] = 1
+    expect(p.useBait(bream, NOW)).toBe(true)
+    expect(p.bait).toEqual({ bait: bream, until: NOW + BAIT_DURATION_MS })
+    expect(p.baitCount(bream)).toBe(0)
+    expect(p.useBait(bream, NOW)).toBe(false)
+  })
+
+  it('пока действует прикормка, ни другую, ни ту же не включить — запас не тратится', () => {
+    const p = new PlayerState(RIVERS)
+    const [bream, zander] = RIVERS.baits
+    p.addBait(bream, 2)
+    p.addBait(zander)
+    expect(p.useBait(bream, NOW)).toBe(true)
+    expect(p.useBait(bream, NOW + 1)).toBe(false)
+    expect(p.useBait(zander, NOW + 1)).toBe(false)
+    expect(p.baitCount(bream)).toBe(1)
+    expect(p.baitCount(zander)).toBe(1)
+    expect(p.bait?.bait).toBe(bream)
+    // Кончилась — можно следующую
+    expect(p.useBait(zander, NOW + BAIT_DURATION_MS)).toBe(true)
+    expect(p.bait?.bait).toBe(zander)
+  })
+
+  it('в тестовой версии прикормок сколько угодно', () => {
+    const p = new PlayerState(RIVERS, { unlockAll: true })
+    for (let i = 0; i < 3; i++) expect(p.useBait(RIVERS.baits[2], NOW + i * BAIT_DURATION_MS)).toBe(true)
+  })
 })

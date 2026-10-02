@@ -290,6 +290,79 @@ body {
   }
 }
 
+/* Короткое окно — по содержимому, а не во весь экран */
+.sheet.compact {
+  height: auto;
+  max-height: min(82vh, 640px);
+}
+
+/* Награда за вход: клетки дней серии */
+.daily-note {
+  margin-top: 8px;
+}
+
+.daily-days {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 14px 0 16px;
+}
+
+.daily-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--ui-card);
+  text-align: center;
+}
+
+.daily-day.taken {
+  opacity: 0.5;
+}
+
+.daily-day.today {
+  border-color: var(--ui-stat);
+  background: rgba(255, 193, 7, 0.14);
+  animation: tut-pulse-border 1.1s ease-in-out infinite;
+}
+
+.daily-day.later {
+  opacity: 0.8;
+}
+
+@keyframes tut-pulse-border {
+  50% {
+    border-color: rgba(255, 193, 7, 0.35);
+  }
+}
+
+.daily-day-name {
+  color: var(--ui-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.daily-day.today .daily-day-name {
+  color: var(--ui-stat);
+}
+
+.daily-reward {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.daily-coin {
+  width: 16px;
+  height: 16px;
+}
+
 .sheet-header {
   display: flex;
   align-items: center;
@@ -357,6 +430,7 @@ body {
 
 .sheet-card {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   min-height: 64px;
   padding: 12px 14px;
@@ -424,6 +498,33 @@ body {
   color: var(--ui-stat);
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Прикормки нет в запасе: карточка приглушена, а кнопка «Получить сейчас» — яркая */
+.sheet-card.empty > :not(.sheet-ad) {
+  opacity: 0.6;
+}
+
+.sheet-card.empty {
+  cursor: default;
+}
+
+.sheet-ad {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ui-stat);
+  color: #10364a;
+  font: 700 16px var(--ui-font);
+  cursor: pointer;
+}
+
+.daily-bait {
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .sheet-card.locked .sheet-buy {

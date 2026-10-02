@@ -1,7 +1,8 @@
 import Phaser from 'phaser'
 import { makeFish, rollFish, type HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent } from '../core/FishingSession.ts'
-import { BAIT_DURATION_MS, baitWorks, isBaitActive, zonesFor } from '../content/bait.ts'
+import { baitWorks, isBaitActive, zonesFor } from '../content/bait.ts'
+import { dayKey } from '../content/daily.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import type { PlayerState } from '../content/player.ts'
@@ -10,6 +11,7 @@ import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
+import { DailyPanel } from '../ui/DailyPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
@@ -84,6 +86,9 @@ export class FishingScene extends Phaser.Scene {
   private tacklePanel!: TacklePanel
   private waterPanel!: WaterPanel
   private baitPanel!: BaitPanel
+  private dailyPanel!: DailyPanel
+  /** Когда последний раз проверяли награду за вход (Date.now()): день может смениться прямо в игре. */
+  private dailyCheckedAt = 0
   private achievementPanel!: AchievementPanel
   private achievementButton!: HTMLButtonElement
   /** Кнопки меню по шагам обучения, которые их подсвечивают. */
@@ -183,14 +188,8 @@ export class FishingScene extends Phaser.Scene {
       },
       SANDBOX,
     )
-    this.baitPanel = new BaitPanel(
-      this.pack,
-      () => this.player.bait,
-      (bait) => {
-        this.player.bait = { bait, until: Date.now() + BAIT_DURATION_MS }
-        this.equip()
-      },
-    )
+    this.baitPanel = new BaitPanel(this.pack, this.player, () => this.equip())
+    this.dailyPanel = new DailyPanel(this.pack, this.player)
     this.hud = new Hud()
     this.hudButtons.set('tackleButton', this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open()))
     this.hudButtons.set('waterButton', this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open()))
@@ -204,6 +203,7 @@ export class FishingScene extends Phaser.Scene {
       this.tacklePanel.destroy()
       this.waterPanel.destroy()
       this.baitPanel.destroy()
+      this.dailyPanel.destroy()
       this.achievementPanel.destroy()
       this.tutorialOverlay.destroy()
     })
@@ -245,6 +245,7 @@ export class FishingScene extends Phaser.Scene {
     if (dt > 0) this.session.update(dt)
     if (this.session.fight?.mode === 'warn') this.tutorialEvent(() => this.tutorial?.onRushWarning())
     this.finishTutorial()
+    this.offerDaily()
     this.draw()
   }
 
@@ -286,7 +287,7 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private get panelOpen(): boolean {
-    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen || this.achievementPanel.isOpen
+    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen || this.achievementPanel.isOpen || this.dailyPanel.isOpen
   }
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
@@ -425,6 +426,18 @@ export class FishingScene extends Phaser.Scene {
     const result = event()
     if (this.tutorial?.step !== before && this.tutorial?.frozen) this.session.release()
     return result
+  }
+
+  /**
+   * Награда за вход — когда игрок свободен: между забросами, без обучения и открытых меню.
+   * В первый день — сразу после обучения. Проверяем раз в секунду: день может смениться посреди игры.
+   */
+  private offerDaily() {
+    const now = Date.now()
+    if (now - this.dailyCheckedAt < 1000) return
+    this.dailyCheckedAt = now
+    if (this.session.phase !== 'idle' || this.tutorial || this.panelOpen) return
+    this.dailyPanel.open(dayKey(new Date(now)))
   }
 
   /** Обучение пройдено: обычные настройки рыбалки с ближайшего покоя, слой обучения — прочь. */

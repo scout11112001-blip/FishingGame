@@ -170,6 +170,7 @@ export const RIVERS: ContentPack = {
   lines: [LINE_02, LINE_03, BRAID, CATFISH_CORD],
   reels: [BASIC_REEL, SPINNING_REEL, MULTIPLIER_REEL, POWER_REEL],
   baits: [BREAM_BAIT, ZANDER_BAIT, CATFISH_BAIT],
+  daily: [{ silver: 200 }, { silver: 200, bait: BREAM_BAIT }, { silver: 200, bait: ZANDER_BAIT }, { silver: 500, bait: CATFISH_BAIT }],
   starter: { rod: BAMBOO, line: LINE_02, reel: BASIC_REEL },
   art: {
     float: 'sprites/float.webp',

@@ -1,5 +1,12 @@
 import { button, el } from './dom.ts'
 
+export interface SheetOptions {
+  /** Высота по содержимому, а не во весь экран: для коротких окон. */
+  compact?: boolean
+  /** Вызывается при любом закрытии — кнопкой, крестиком, мимо панели, Esc. */
+  onClose?: () => void
+}
+
 /**
  * Модальная панель поверх игры: снизу на телефоне, по центру на широком экране.
  * Закрывается кнопкой «Готово», крестиком, тапом мимо панели и клавишей Esc.
@@ -9,13 +16,15 @@ export class Sheet {
   /** Область между шапкой и кнопкой «Готово». */
   readonly body: HTMLDivElement
   private readonly root: HTMLDivElement
+  private readonly onClose?: () => void
 
-  constructor(title: string, doneLabel: string) {
+  constructor(title: string, doneLabel: string, options: SheetOptions = {}) {
+    this.onClose = options.onClose
     this.root = el('div', 'sheet-backdrop')
     this.root.hidden = true
     this.root.addEventListener('click', (e) => e.target === this.root && this.close())
 
-    const sheet = el('div', 'sheet')
+    const sheet = el('div', options.compact ? 'sheet compact' : 'sheet')
     sheet.setAttribute('role', 'dialog')
     sheet.setAttribute('aria-label', title)
 
@@ -40,7 +49,9 @@ export class Sheet {
   }
 
   close(): void {
+    if (this.root.hidden) return
     this.root.hidden = true
+    this.onClose?.()
   }
 
   destroy(): void {

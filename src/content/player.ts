@@ -1,8 +1,9 @@
 import { emptyStats, AchievementLog, type PlayerStats } from './achievements.ts'
-import { isBaitActive, type ActiveBait } from './bait.ts'
+import { BAIT_DURATION_MS, isBaitActive, type ActiveBait } from './bait.ts'
+import { claimDaily, dailyOffer, emptyDaily, type DailyReward, type DailyState } from './daily.ts'
 import { isWaterOpen } from './progress.ts'
 import { itemsOf, Shop, type Slot } from './shop.ts'
-import type { ContentPack, Line, Loadout, Reel, Rod, WaterBody } from './types.ts'
+import type { Bait, ContentPack, Line, Loadout, Reel, Rod, WaterBody } from './types.ts'
 
 // Прогресс игрока — всё, что переживает перезагрузку: серебро, снасти, опыт, водоём, прикормка, достижения, обучение.
 // Здесь же формат сохранения и проверка при загрузке. Ничего не знает ни о графике, ни о том, где лежит сохранение.
@@ -21,6 +22,9 @@ export interface SaveData {
   loadout: Record<Slot, string>
   water: string
   bait: { id: string; until: number } | null
+  /** Запас прикормок: id → штук. */
+  baitStock: Record<string, number>
+  daily: DailyState
   stats: Omit<PlayerStats, 'xp'>
   achievements: { done: string[]; unseen: string[] }
   tutorialDone: boolean
@@ -38,6 +42,9 @@ export class PlayerState {
   water: WaterBody
   loadout: Loadout
   bait: ActiveBait | null = null
+  /** Запас прикормок по id. */
+  baitStock: Record<string, number> = {}
+  daily: DailyState = emptyDaily()
   tutorialDone = false
   private readonly pack: ContentPack
   private readonly unlockAll: boolean
@@ -56,6 +63,48 @@ export class PlayerState {
     return this.unlockAll || isWaterOpen(water, this.xp)
   }
 
+  /** Сколько прикормки в запасе. В тестовой версии — сколько угодно. */
+  baitCount(bait: Bait): number {
+    return this.unlockAll ? Infinity : (this.baitStock[bait.id] ?? 0)
+  }
+
+  /** Положить прикормку в запас: награда за вход или за просмотр рекламы. */
+  addBait(bait: Bait, count = 1): void {
+    this.baitStock[bait.id] = (this.baitStock[bait.id] ?? 0) + count
+  }
+
+  /** Можно ли сейчас включить прикормку: есть в запасе и никакая другая (или эта же) ещё не действует. */
+  canUseBait(bait: Bait, now: number): boolean {
+    return this.baitCount(bait) >= 1 && !isBaitActive(this.bait, now)
+  }
+
+  /**
+   * Включить прикормку из запаса. Действует одна за раз: пока она не кончилась, ни другую, ни ту же ещё раз не включить —
+   * иначе вторая сгорела бы впустую. false — нельзя (см. canUseBait).
+   */
+  useBait(bait: Bait, now: number): boolean {
+    if (!this.canUseBait(bait, now)) return false
+    if (!this.unlockAll) this.baitStock[bait.id] -= 1
+    this.bait = { bait, until: now + BAIT_DURATION_MS }
+    return true
+  }
+
+  /** Какую награду за вход можно забрать сегодня (номер дня серии с 0), или null — уже забрана. */
+  dailyOffer(today: string): number | null {
+    return this.pack.daily.length ? dailyOffer(this.daily, today, this.pack.daily.length) : null
+  }
+
+  /** Забрать награду за вход: серебро и прикормка в запас. Возвращает выданное. */
+  claimDaily(today: string): DailyReward | null {
+    const index = this.dailyOffer(today)
+    if (index === null) return null
+    const reward = this.pack.daily[index]
+    this.shop.earn(reward.silver)
+    if (reward.bait) this.addBait(reward.bait)
+    this.daily = claimDaily(index, today)
+    return reward
+  }
+
   /** Снимок для сохранения — без времени записи: его ставит тот, кто пишет. */
   toSave(): Omit<SaveData, 'savedAt'> {
     const { catches, bySpecies, best } = this.achievements.stats
@@ -67,6 +116,8 @@ export class PlayerState {
       loadout: { rod: this.loadout.rod.id, line: this.loadout.line.id, reel: this.loadout.reel.id },
       water: this.water.id,
       bait: this.bait ? { id: this.bait.bait.id, until: this.bait.until } : null,
+      baitStock: { ...this.baitStock },
+      daily: { ...this.daily },
       stats: { catches, bySpecies: { ...bySpecies }, best: { ...best } },
       achievements: this.achievements.ids(),
       tutorialDone: this.tutorialDone,
@@ -98,6 +149,12 @@ export class PlayerState {
     const bait = data.bait && pack.baits.find((b) => b.id === data.bait!.id)
     const active = bait ? { bait, until: Number(data.bait!.until) } : null
     this.bait = isBaitActive(active, now) ? active : null
+    this.baitStock = {}
+    for (const b of pack.baits) {
+      const n = count(Number(data.baitStock[b.id]))
+      if (n > 0) this.baitStock[b.id] = n
+    }
+    this.daily = { lastDay: /^\d{4}-\d{2}-\d{2}$/.test(data.daily.lastDay ?? '') ? data.daily.lastDay : null, streak: count(data.daily.streak) }
 
     const stats: PlayerStats = {
       catches: count(data.stats.catches),
@@ -128,6 +185,7 @@ export function parseSave(json: string): SaveData | null {
   const stats = isObject(r.stats) ? r.stats : {}
   const achievements = isObject(r.achievements) ? r.achievements : {}
   const bait = isObject(r.bait) ? r.bait : null
+  const daily = isObject(r.daily) ? r.daily : {}
   const empty = emptyStats()
   return {
     v: SAVE_VERSION,
@@ -138,6 +196,9 @@ export function parseSave(json: string): SaveData | null {
     loadout: { rod: str(loadout.rod), line: str(loadout.line), reel: str(loadout.reel) },
     water: str(r.water),
     bait: bait ? { id: str(bait.id), until: num(bait.until) } : null,
+    // Поля, которых не было в первых сохранениях, — по умолчанию: формат от этого не меняется
+    baitStock: isObject(r.baitStock) ? (r.baitStock as Record<string, number>) : {},
+    daily: { lastDay: typeof daily.lastDay === 'string' ? daily.lastDay : null, streak: num(daily.streak) },
     stats: {
       catches: num(stats.catches),
       bySpecies: isObject(stats.bySpecies) ? (stats.bySpecies as Record<string, number>) : empty.bySpecies,
