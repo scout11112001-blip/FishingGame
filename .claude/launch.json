@@ -12,6 +12,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:sandbox", "--", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "yandex",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "yandex"],
+      "port": 8080
+    },
+    {
+      "name": "yandex-http",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--outDir", "dist-yandex", "--port", "4173", "--strictPort"],
+      "port": 4173
     }
   ]
 }

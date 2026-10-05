@@ -13,6 +13,8 @@ export class AutoSaver {
   private readonly store: SaveStore
   private readonly player: PlayerState
   private last: string
+  /** Последнее записанное целиком — со временем записи: при сворачивании его дописываем в облако без очереди. */
+  private lastFull: string | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private disabled = false
 
@@ -38,13 +40,18 @@ export class AutoSaver {
     this.disabled = true
   }
 
-  /** Записать, если с прошлой записи что-то изменилось. */
-  flush(): void {
+  /**
+   * Записать, если с прошлой записи что-то изменилось. urgent — игру сворачивают или закрывают:
+   * пишем сразу, а если нового нет, всё равно досылаем последнее — облако могло ещё ждать своей очереди.
+   */
+  flush(urgent = false): void {
     if (this.disabled) return
     const json = this.snapshot()
-    if (json === this.last) return
-    this.last = json
-    void this.store.save(JSON.stringify({ ...this.player.toSave(), savedAt: Date.now() }))
+    if (json !== this.last) {
+      this.last = json
+      this.lastFull = JSON.stringify({ ...this.player.toSave(), savedAt: Date.now() })
+    } else if (!urgent || !this.lastFull) return
+    void this.store.save(this.lastFull, urgent)
   }
 
   private snapshot(): string {

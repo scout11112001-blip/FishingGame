@@ -8,6 +8,7 @@
     "dev:sandbox": "vite --mode sandbox --port 5174",
     "build": "tsc && vite build",
     "build:sandbox": "tsc && vite build --mode sandbox --outDir dist-sandbox",
+    "yandex": "vite build --mode debug --outDir dist-yandex && sdk-dev-proxy -p dist-yandex --dev-mode=true",
     "preview": "vite preview",
     "test": "vitest run",
     "balance": "node scripts/balance.ts",
@@ -16,6 +17,8 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "@types/ysdk": "^1.2.0",
+    "@yandex-games/sdk-dev-proxy": "^0.0.2",
     "sharp": "^0.35.5",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",

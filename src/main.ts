@@ -2,9 +2,10 @@ import Phaser from 'phaser'
 import './style.css'
 import { ACTIVE_PACK } from './content/index.ts'
 import { PlayerState } from './content/player.ts'
+import { DEBUG } from './debug.ts'
 import { SANDBOX } from './sandbox.ts'
+import { loadPlatform } from './platform/load.ts'
 import { AutoSaver, loadInto } from './save/autosave.ts'
-import { LocalStore } from './save/store.ts'
 import { FishingScene } from './scenes/FishingScene.ts'
 
 /**
@@ -14,19 +15,21 @@ import { FishingScene } from './scenes/FishingScene.ts'
 const pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2)
 
 // Своё сохранение у каждой обёртки, а у тестовой версии — отдельное: открытый контент не портит настоящий прогресс
-const store = new LocalStore(`fishing:${ACTIVE_PACK.id}${SANDBOX ? ':sandbox' : ''}`)
+// Яндекс Игры (SDK) или просто браузер — до всего остального: от площадки зависит, где хранится прогресс
+const platform = await loadPlatform()
+const store = platform.saveStore(`fishing:${ACTIVE_PACK.id}${SANDBOX ? ':sandbox' : ''}`)
 const player = new PlayerState(ACTIVE_PACK, { unlockAll: SANDBOX })
 // Прогресс грузится до запуска сцены: игра сразу стартует с ним
-await loadInto(player, store, Date.now())
+await loadInto(player, store, platform.now())
 
 const saver = new AutoSaver(store, player)
 saver.start()
 // Свернули или закрыли — пишем сразу, не дожидаясь проверки по таймеру
-document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && saver.flush())
-window.addEventListener('pagehide', () => saver.flush())
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && saver.flush(true))
+window.addEventListener('pagehide', () => saver.flush(true))
 
-// Отладка: в dev-сборке из консоли браузера __resetSave() стирает прогресс и перезапускает игру
-if (import.meta.env.DEV) {
+// Отладка: из консоли браузера __resetSave() стирает прогресс и перезапускает игру
+if (DEBUG) {
   Object.assign(window, {
     __resetSave: async () => {
       saver.disable()
@@ -51,10 +54,10 @@ const game = new Phaser.Game({
     height: parent.clientHeight * ratio,
     zoom: 1 / ratio,
   },
-  scene: [new FishingScene(player)],
+  scene: [new FishingScene(player, platform)],
 })
-// Отладка: в dev-сборке игра доступна из консоли браузера как __game (звук, сцены)
-if (import.meta.env.DEV) Object.assign(window, { __game: game })
+// Отладка: игра и площадка доступны из консоли браузера как __game и __platform
+if (DEBUG) Object.assign(window, { __game: game, __platform: platform })
 
 // Сами подгоняем холст под окно: и при смене размера, и при переносе окна на экран с другой плотностью
 window.addEventListener('resize', () => {

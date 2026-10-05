@@ -6,7 +6,9 @@ import { dayKey } from '../content/daily.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import type { PlayerState } from '../content/player.ts'
+import type { Platform } from '../platform/platform.ts'
 import { LAST_STEP, TUTORIAL_FISH_SIZE, TUTORIAL_TUNING, Tutorial, type TutorialTarget } from '../content/tutorial.ts'
+import { DEBUG } from '../debug.ts'
 import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
@@ -100,6 +102,10 @@ export class FishingScene extends Phaser.Scene {
   private readonly pack: ContentPack = ACTIVE_PACK
   /** Прогресс игрока: серебро, снасти, опыт, водоём, прикормка, достижения. Его же сохраняет автосохранение. */
   private readonly player: PlayerState
+  /** Яндекс Игры или просто браузер: реклама, паузы, разметка геймплея, серверное время. */
+  private readonly platform: Platform
+  /** Площадка поставила игру на паузу: реклама, окно покупки, свёрнутая вкладка. */
+  private platformPaused = false
   /** Водоём, снасть или прикормка сменились, а сессия ещё не в покое и не приняла их — пробуем каждый кадр. */
   private equipPending = false
 
@@ -111,9 +117,10 @@ export class FishingScene extends Phaser.Scene {
   private notice: { text: string; age: number; at: Point | null } | null = null
   private result: Result | null = null
 
-  constructor(player: PlayerState) {
+  constructor(player: PlayerState, platform: Platform) {
     super('FishingScene')
     this.player = player
+    this.platform = platform
     this.tutorial = SANDBOX || player.tutorialDone ? null : new Tutorial()
   }
 
@@ -144,8 +151,8 @@ export class FishingScene extends Phaser.Scene {
         this.tutorial ? makeFish(spawns.reduce((a, b) => (b.rarity > a.rarity ? b : a)).species, TUTORIAL_FISH_SIZE) : rollFish(rng, spawns),
     })
     this.session.on((e) => this.onEvent(e))
-    // Отладка: в dev-сборке сессия доступна из консоли браузера как __fishing
-    if (import.meta.env.DEV) Object.assign(window, { __fishing: this.session })
+    // Отладка: сессия доступна из консоли браузера как __fishing
+    if (DEBUG) Object.assign(window, { __fishing: this.session })
 
     // Порядок создания — порядок слоёв: фон, вода, поплавок и рыба, леска, удочка, интерфейс боя, надписи
     this.bg = this.add.image(0, 0, '__DEFAULT').setOrigin(0)
@@ -196,7 +203,7 @@ export class FishingScene extends Phaser.Scene {
       },
       SANDBOX,
     )
-    this.baitPanel = new BaitPanel(this.pack, this.player, () => this.equip())
+    this.baitPanel = new BaitPanel(this.pack, this.player, this.platform, () => this.equip())
     this.dailyPanel = new DailyPanel(this.pack, this.player)
     this.hud = new Hud()
     this.hudButtons.set('tackleButton', this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open()))
@@ -242,11 +249,21 @@ export class FishingScene extends Phaser.Scene {
     // Ушли из вкладки с зажатым пальцем — отпускаем, иначе вернёмся к порванной леске
     this.game.events.on('blur', () => this.session.release())
     this.game.events.on('hidden', () => this.session.release())
+
+    // Пауза от площадки: на рекламе и в окне покупки игра стоит, звук молчит
+    this.platform.onPause((paused) => {
+      this.platformPaused = paused
+      this.session.release()
+      if (paused) this.sound.pauseAll()
+      else this.sound.resumeAll()
+    })
+    // Всё загружено и нажимается — сообщаем площадке
+    this.platform.ready()
   }
 
   update(_time: number, deltaMs: number) {
     // Пока на экране шаг обучения, игра стоит: и рыбалка, и покачивание поплавка
-    const dt = this.tutorial?.frozen ? 0 : deltaMs / 1000
+    const dt = this.tutorial?.frozen || this.platformPaused ? 0 : deltaMs / 1000
     this.elapsed += dt
     this.nibbleAge += dt
     if (this.notice) this.notice.age += dt
@@ -261,6 +278,8 @@ export class FishingScene extends Phaser.Scene {
     if (this.session.fight?.mode === 'warn') this.tutorialEvent(() => this.tutorial?.onRushWarning())
     this.finishTutorial()
     this.offerDaily()
+    // Игровой процесс идёт, пока игрок ловит: меню, пауза и свёрнутая вкладка его останавливают
+    this.platform.setGameplay(!this.panelOpen && !this.platformPaused && document.visibilityState === 'visible')
     this.draw()
   }
 
@@ -471,7 +490,8 @@ export class FishingScene extends Phaser.Scene {
     if (now - this.dailyCheckedAt < 1000) return
     this.dailyCheckedAt = now
     if (this.session.phase !== 'idle' || this.tutorial || this.panelOpen) return
-    this.dailyPanel.open(dayKey(new Date(now)))
+    // День — по времени площадки: на Яндексе оно серверное, перевод часов награду не даст
+    this.dailyPanel.open(dayKey(new Date(this.platform.now())))
   }
 
   /** Обучение пройдено: обычные настройки рыбалки с ближайшего покоя, слой обучения — прочь. */
@@ -511,6 +531,9 @@ export class FishingScene extends Phaser.Scene {
         this.notice = e.clamped ? { text: this.texts.cast.tooFar, age: 0, at: null } : null
         break
       case 'phase':
+        // Закрыл экран итога — логическая пауза: тут может быть межстраничная реклама (не чаще раза в 5 минут).
+        // В обучении — нет: новичок должен спокойно поймать первую рыбу
+        if (e.phase === 'idle' && this.result && !this.tutorial) void this.platform.showFullscreenAd()
         if (e.phase === 'idle') this.result = null
         // Поплавок долетел и шлёпнулся в воду
         if (e.phase === 'waiting') this.playSound(SPLASH_KEY, SPLASH_VOLUME)

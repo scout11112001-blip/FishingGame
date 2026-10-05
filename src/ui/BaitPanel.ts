@@ -1,6 +1,6 @@
-import { REWARDED_ADS, showRewardedAd } from '../ads.ts'
 import { baitWaters, isBaitActive } from '../content/bait.ts'
 import type { PlayerState } from '../content/player.ts'
+import type { Platform } from '../platform/platform.ts'
 import type { Bait, ContentPack } from '../content/types.ts'
 import { button, card, el } from './dom.ts'
 import { Sheet } from './Sheet.ts'
@@ -16,11 +16,13 @@ export class BaitPanel {
   private readonly list: HTMLUListElement
   private readonly pack: ContentPack
   private readonly player: PlayerState
+  private readonly platform: Platform
   private readonly onActivate: () => void
 
-  constructor(pack: ContentPack, player: PlayerState, onActivate: () => void) {
+  constructor(pack: ContentPack, player: PlayerState, platform: Platform, onActivate: () => void) {
     this.pack = pack
     this.player = player
+    this.platform = platform
     this.onActivate = onActivate
     this.sheet = new Sheet(pack.texts.bait.title, pack.texts.ui.done)
     this.list = el('ul', 'sheet-list')
@@ -58,8 +60,8 @@ export class BaitPanel {
       if (count < 1) {
         c.classList.add('empty')
         const ad = button('sheet-ad', t.getNow, () => void this.getNow(bait))
-        // Пока реклама не подключена — кнопка видна, но не нажимается
-        ad.disabled = !REWARDED_ADS
+        // Без рекламы (не на Яндексе) — кнопка видна, но не нажимается
+        ad.disabled = !this.platform.rewardedAds
         c.append(el('div', 'sheet-buy', t.empty), ad)
       } else {
         if (Number.isFinite(count)) c.append(el('div', 'sheet-buy', t.stock(count)))
@@ -77,7 +79,7 @@ export class BaitPanel {
 
   /** Прикормка в запас за просмотр рекламы. */
   private async getNow(bait: Bait) {
-    if (!(await showRewardedAd())) return
+    if (!(await this.platform.showRewardedAd())) return
     this.player.addBait(bait)
     this.render()
   }

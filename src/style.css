@@ -86,6 +86,11 @@ body {
   font-size: 17px;
 }
 
+/* Кубок по размеру такой же, как динамик у кнопки звука, но тёмно-золотой на тёмной кнопке читается мельче — чуть крупнее */
+.hud-top .hud-icon-button > span:first-child {
+  font-size: 22px;
+}
+
 @media (min-width: 700px) {
   .hud-label {
     display: inline;
