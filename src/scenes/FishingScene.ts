@@ -13,6 +13,7 @@ import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { DailyPanel } from '../ui/DailyPanel.ts'
 import { Hud } from '../ui/Hud.ts'
+import { SoundButton } from '../ui/SoundButton.ts'
 import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
 import { WaterPanel } from '../ui/WaterPanel.ts'
@@ -94,6 +95,7 @@ export class FishingScene extends Phaser.Scene {
   /** Кнопки меню по шагам обучения, которые их подсвечивают. */
   private readonly hudButtons = new Map<TutorialTarget, HTMLButtonElement>()
   private tutorialOverlay!: TutorialOverlay
+  private soundButton!: SoundButton
 
   private readonly pack: ContentPack = ACTIVE_PACK
   /** Прогресс игрока: серебро, снасти, опыт, водоём, прикормка, достижения. Его же сохраняет автосохранение. */
@@ -123,6 +125,12 @@ export class FishingScene extends Phaser.Scene {
       this.load.image(FLOAT_KEY, art.float)
       if (art.silver) this.load.image(SILVER_KEY, art.silver)
       for (const [id, path] of Object.entries(art.fish)) this.load.image(fishKey(id), path)
+    }
+    const sounds = this.pack.sounds
+    if (sounds) {
+      this.load.audio(SPLASH_KEY, sounds.splash)
+      this.load.audio(CATCH_KEY, sounds.catch)
+      this.load.audio(AMBIENT_KEY, sounds.ambient)
     }
   }
 
@@ -198,6 +206,12 @@ export class FishingScene extends Phaser.Scene {
     this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
     this.hudButtons.set('achievementsButton', this.achievementButton)
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
+    this.sound.mute = this.player.muted
+    this.startAmbient()
+    this.soundButton = new SoundButton(this.player.muted, { mute: this.texts.ui.mute, unmute: this.texts.ui.unmute }, (muted) => {
+      this.player.muted = muted
+      this.sound.mute = muted
+    })
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
       this.tacklePanel.destroy()
@@ -206,6 +220,7 @@ export class FishingScene extends Phaser.Scene {
       this.dailyPanel.destroy()
       this.achievementPanel.destroy()
       this.tutorialOverlay.destroy()
+      this.soundButton.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
@@ -300,7 +315,7 @@ export class FishingScene extends Phaser.Scene {
    * Под ними — сколько ещё действует прикормка.
    */
   private drawWallet(size: number) {
-    const x0 = 12
+    const x0 = this.soundButton.right + 10
     const y0 = 10
     const label = this.walletLabel.setFontSize(size).setPosition(x0, y0).setText(this.texts.wallet)
     let x = x0 + label.width
@@ -317,17 +332,20 @@ export class FishingScene extends Phaser.Scene {
     const next = SANDBOX ? undefined : nextLockedWater(this.pack, this.player.xp)
     const xp = next ? `${this.player.xp} / ${next.unlockXp}` : `${this.player.xp}`
     const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.player.shop.silver)}`)
-    this.xpText
-      .setFontSize(size)
-      .setPosition(x + silver.width + size * 1.2, y0)
-      .setText(`${this.texts.xp}: ${xp}`)
+    const xpText = this.xpText.setFontSize(size).setText(`${this.texts.xp}: ${xp}`)
+    const xpX = x + silver.width + size * 1.2
+    // Правее — кнопка достижений: на узком телефоне опыт уходит строкой ниже
+    const room = this.view.w - 80
+    const wrap = xpX + xpText.width > room
+    xpText.setPosition(wrap ? x0 : xpX, wrap ? y0 + label.height : y0)
+    const linesBottom = y0 + label.height * (wrap ? 2 : 1)
 
     const now = Date.now()
     const bait = isBaitActive(this.player.bait, now) ? this.player.bait : null
     this.baitText.setVisible(!!bait)
     if (bait) {
       const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.player.water, bait.bait.species))
-      this.baitText.setFontSize(size).setPosition(x0, y0 + label.height).setText(status)
+      this.baitText.setFontSize(size).setPosition(x0, linesBottom).setText(status)
     }
   }
 
@@ -407,6 +425,22 @@ export class FishingScene extends Phaser.Scene {
     this.session.press()
   }
 
+  /**
+   * Фон у воды — по кругу с самого начала. Браузер не даёт играть звук до первого нажатия на страницу:
+   * тогда Phaser держит звук «запертым», и мы запускаем фон, как только он откроется.
+   * Свёрнутая вкладка ставит звук на паузу сама (pauseOnBlur), кнопка в углу — выключает совсем.
+   */
+  private startAmbient() {
+    if (!this.cache.audio.exists(AMBIENT_KEY)) return
+    const play = () => this.sound.add(AMBIENT_KEY, { loop: true, volume: AMBIENT_VOLUME }).play()
+    if (this.sound.locked) this.sound.once(Phaser.Sound.Events.UNLOCKED, play)
+    else play()
+  }
+
+  private playSound(key: string, volume: number) {
+    if (this.cache.audio.exists(key)) this.sound.play(key, { volume })
+  }
+
   /** Тап по карточке обучения (или пробел). */
   private tutorialTap() {
     const t = this.tutorial
@@ -464,6 +498,7 @@ export class FishingScene extends Phaser.Scene {
         this.nibbleAge = 0
         break
       case 'caught':
+        this.playSound(CATCH_KEY, CATCH_VOLUME)
         this.player.shop.earn(e.price)
         this.player.xp += XP_PER_FISH
         this.player.achievements.onCatch(e.fish, this.player.xp)
@@ -477,6 +512,8 @@ export class FishingScene extends Phaser.Scene {
         break
       case 'phase':
         if (e.phase === 'idle') this.result = null
+        // Поплавок долетел и шлёпнулся в воду
+        if (e.phase === 'waiting') this.playSound(SPLASH_KEY, SPLASH_VOLUME)
         this.tutorialEvent(() => this.tutorial?.onPhase(e.phase))
         break
     }
@@ -897,6 +934,13 @@ export class FishingScene extends Phaser.Scene {
 type Point = { x: number; y: number }
 
 const FLOAT_KEY = 'float'
+const SPLASH_KEY = 'splash'
+const CATCH_KEY = 'catch'
+const AMBIENT_KEY = 'ambient'
+/** Громкость: всплеск записан громко, фон — тихо, и в игре он должен оставаться фоном. */
+const SPLASH_VOLUME = 0.6
+const CATCH_VOLUME = 0.6
+const AMBIENT_VOLUME = 1
 const SILVER_KEY = 'silver'
 
 function fishKey(speciesId: string): string {

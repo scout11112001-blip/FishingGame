@@ -134,7 +134,15 @@ body {
   }
 }
 
-/* Верхняя кнопка не делит ширину с нижними: правило выше для телефона её не касается */
+/* Кнопка звука — в левом верхнем углу, зеркально кнопке достижений */
+.hud-corner {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 16px;
+}
+
+/* Верхние кнопки не делят ширину с нижними: правило выше для телефона их не касается */
+.hud-corner .hud-icon-button,
 .hud-top .hud-icon-button {
   flex: none;
   padding: 0 14px;
@@ -520,6 +528,12 @@ body {
   color: #10364a;
   font: 700 16px var(--ui-font);
   cursor: pointer;
+}
+
+.sheet-ad:disabled {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--ui-muted);
+  cursor: default;
 }
 
 .daily-bait {

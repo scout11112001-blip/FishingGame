@@ -25,6 +25,18 @@ export interface ContentPack {
   texts: PackTexts
   /** Картинки поплавка и рыб. Без них сцена рисует простые фигуры. */
   art?: PackArt
+  /** Звуки. Без них игра просто молчит. */
+  sounds?: PackSounds
+}
+
+/** Звуки пакета — пути относительно public/. Готовит их скрипт npm run audio из исходников в art/audio. */
+export interface PackSounds {
+  /** Поплавок упал в воду. */
+  splash: string
+  /** Рыбу вытащили из воды. */
+  catch: string
+  /** Фон у воды — играет по кругу. */
+  ambient: string
 }
 
 /** Спрайты пакета — пути относительно public/. Готовит их скрипт npm run art из картинок в art/. */
@@ -209,6 +221,9 @@ export interface PackTexts {
   ui: {
     selected: string
     done: string
+    /** Подписи кнопки звука для чтения с экрана: на самой кнопке — значок динамика. */
+    mute: string
+    unmute: string
   }
   tackle: {
     button: string

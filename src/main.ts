@@ -53,6 +53,8 @@ const game = new Phaser.Game({
   },
   scene: [new FishingScene(player)],
 })
+// Отладка: в dev-сборке игра доступна из консоли браузера как __game (звук, сцены)
+if (import.meta.env.DEV) Object.assign(window, { __game: game })
 
 // Сами подгоняем холст под окно: и при смене размера, и при переносе окна на экран с другой плотностью
 window.addEventListener('resize', () => {

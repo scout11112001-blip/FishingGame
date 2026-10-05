@@ -3,8 +3,8 @@ import type { ContentPack } from '../content/types.ts'
 import { el } from './dom.ts'
 import { Sheet } from './Sheet.ts'
 
-/** Значок, пока нет картинки: такой же по смыслу эмодзи. */
-const FALLBACK: Record<string, string> = {
+/** Значки достижений — эмодзи по имени значка; у «сотни» и рекорда вместо эмодзи — сама рыба. */
+const EMOJI: Record<string, string> = {
   first: '🎣',
   fifty: '🪣',
   hundred: '🪣',
@@ -13,8 +13,8 @@ const FALLBACK: Record<string, string> = {
   record: '👑',
   xp: '⭐',
 }
-/** Значки водоёмов называются по id водоёма — им всем один запасной. */
-const WATER_FALLBACK = '🏞️'
+/** Значки водоёмов называются по id водоёма — им всем один. */
+const WATER_EMOJI = '🏞️'
 
 /**
  * Меню достижений: слева значок, справа название, задание и прогресс.
@@ -100,25 +100,16 @@ export class AchievementPanel {
     return c
   }
 
-  /** Значок: картинка достижения, у «сотни» и рекорда — с рыбой поверх. Без картинки — эмодзи. */
+  /** Значок: у «сотни» и рекорда — картинка самой рыбы, у остальных — эмодзи. */
   private icon(a: Achievement): HTMLDivElement {
     const box = el('div', 'ach-icon')
-    const img = el('img')
-    img.alt = ''
-    img.src = `sprites/ach-${a.icon}.webp`
-    img.addEventListener('error', () => {
-      img.remove()
-      // У «сотни» и рекорда без картинки достаточно самой рыбы
-      if (!a.species) box.prepend(el('span', 'ach-emoji', FALLBACK[a.icon] ?? WATER_FALLBACK))
-    })
-    box.append(img)
     const fish = a.species && this.pack.art?.fish[a.species.id]
     if (fish) {
       const f = el('img', 'ach-fish')
       f.alt = ''
       f.src = fish
       box.append(f)
-    }
+    } else box.append(el('span', 'ach-emoji', EMOJI[a.icon] ?? WATER_EMOJI))
     return box
   }
 }

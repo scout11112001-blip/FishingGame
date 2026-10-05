@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "balance": "node scripts/balance.ts",
-    "art": "node scripts/art.ts"
+    "art": "node scripts/art.ts",
+    "audio": "node scripts/audio.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

@@ -1,4 +1,4 @@
-import { showRewardedAd } from '../ads.ts'
+import { REWARDED_ADS, showRewardedAd } from '../ads.ts'
 import { baitWaters, isBaitActive } from '../content/bait.ts'
 import type { PlayerState } from '../content/player.ts'
 import type { Bait, ContentPack } from '../content/types.ts'
@@ -57,7 +57,10 @@ export class BaitPanel {
       // Запас: в тестовой версии он бесконечный — тогда не пишем
       if (count < 1) {
         c.classList.add('empty')
-        c.append(el('div', 'sheet-buy', t.empty), button('sheet-ad', t.getNow, () => void this.getNow(bait)))
+        const ad = button('sheet-ad', t.getNow, () => void this.getNow(bait))
+        // Пока реклама не подключена — кнопка видна, но не нажимается
+        ad.disabled = !REWARDED_ADS
+        c.append(el('div', 'sheet-buy', t.empty), ad)
       } else {
         if (Number.isFinite(count)) c.append(el('div', 'sheet-buy', t.stock(count)))
         // Действующей прикормке подсказка не нужна — у неё метка и сколько осталось

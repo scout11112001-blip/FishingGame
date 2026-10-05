@@ -28,7 +28,7 @@ export interface Achievement {
   kind: AchievementKind
   title: string
   description: string
-  /** Имя значка: картинка sprites/ach-<icon>.webp. У «сотни» и рекорда поверх рисуется сама рыба. */
+  /** Имя значка: по нему меню берёт эмодзи. У «сотни» и рекорда вместо него — картинка самой рыбы. */
   icon: string
   /** Рыба достижения — для «сотни» и рекорда. */
   species?: FishSpecies

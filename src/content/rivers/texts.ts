@@ -37,6 +37,8 @@ export const RIVERS_TEXTS: PackTexts = {
   ui: {
     selected: 'Выбрано',
     done: 'Готово',
+    mute: 'Выключить звук',
+    unmute: 'Включить звук',
   },
   tackle: {
     button: 'Снасти',
@@ -56,7 +58,7 @@ export const RIVERS_TEXTS: PackTexts = {
     status: (name, time, works) => (works ? `${name}: ${time}` : `${name}: ${time} — здесь не действует`),
     stock: (count) => `В запасе: ${count}`,
     empty: 'Нет в запасе — заходи каждый день за наградой',
-    getNow: 'Получить сейчас 📺',
+    getNow: 'Получить сейчас — смотреть рекламу',
     busy: 'Включишь, когда закончится действующая',
   },
   daily: {

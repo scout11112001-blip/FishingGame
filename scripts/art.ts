@@ -61,12 +61,6 @@ const JOBS: Job[] = [
   { src: 'sudak.jpg', out: 'zander', size: 720 },
   { src: 'shuka.jpg', out: 'pike', size: 720 },
   { src: 'som.jpg', out: 'catfish', size: 720 },
-  // Значки достижений: в меню 60 px, 192 — с запасом на плотный экран. Чего ещё нет — пропускается
-  ...['first', 'fifty', 'hundred', 'thousand', 'species', 'record', 'river', 'lake', 'xp'].map((name) => ({
-    src: `ach-${name}.jpg`,
-    out: `ach-${name}`,
-    size: 192,
-  })),
 ]
 
 /** Отличие от цвета фона (0..441): ниже SOLID — точно фон, выше EDGE — точно предмет, между — мягкий край. */

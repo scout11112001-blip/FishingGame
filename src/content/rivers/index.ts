@@ -178,5 +178,10 @@ export const RIVERS: ContentPack = {
     fish: Object.fromEntries(ALL_FISH.map((f) => [f.id, `sprites/${f.id}.webp`])),
     silver: 'sprites/silver.webp',
   },
+  sounds: {
+    splash: 'audio/splash.wav',
+    catch: 'audio/catch.wav',
+    ambient: 'audio/ambient-river.wav',
+  },
   texts: RIVERS_TEXTS,
 }

@@ -23,6 +23,7 @@ function played(): PlayerState {
   p.bait = { bait: RIVERS.baits[0], until: NOW + BAIT_DURATION_MS }
   p.achievements.markSeen('catches-1')
   p.tutorialDone = true
+  p.muted = true
   return p
 }
 
@@ -50,6 +51,7 @@ describe('сохранение прогресса', () => {
     expect(after.achievements.isUnseen('catches-1')).toBe(false)
     expect(after.achievements.isUnseen('water-river')).toBe(true)
     expect(after.tutorialDone).toBe(true)
+    expect(after.muted).toBe(true)
   })
 
   it('новый игрок сохраняется и загружается без потерь', () => {

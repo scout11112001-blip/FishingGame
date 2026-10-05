@@ -28,6 +28,8 @@ export interface SaveData {
   stats: Omit<PlayerStats, 'xp'>
   achievements: { done: string[]; unseen: string[] }
   tutorialDone: boolean
+  /** Звук выключен кнопкой в углу. */
+  muted: boolean
 }
 
 export interface PlayerOptions {
@@ -46,6 +48,7 @@ export class PlayerState {
   baitStock: Record<string, number> = {}
   daily: DailyState = emptyDaily()
   tutorialDone = false
+  muted = false
   private readonly pack: ContentPack
   private readonly unlockAll: boolean
 
@@ -121,6 +124,7 @@ export class PlayerState {
       stats: { catches, bySpecies: { ...bySpecies }, best: { ...best } },
       achievements: this.achievements.ids(),
       tutorialDone: this.tutorialDone,
+      muted: this.muted,
     }
   }
 
@@ -164,6 +168,7 @@ export class PlayerState {
     }
     this.achievements.restore(stats, data.achievements.done, data.achievements.unseen)
     this.tutorialDone = data.tutorialDone === true
+    this.muted = data.muted === true
   }
 }
 
@@ -206,6 +211,7 @@ export function parseSave(json: string): SaveData | null {
     },
     achievements: { done: strings(achievements.done), unseen: strings(achievements.unseen) },
     tutorialDone: r.tutorialDone === true,
+    muted: r.muted === true,
   }
 }
 
