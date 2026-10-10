@@ -269,6 +269,19 @@ describe('FishingSession: вываживание', () => {
     expect(modes.slice(0, 3)).toEqual(['calm', 'warn', 'rush'])
   })
 
+  it('без рывков рыба так и водит спокойно до самого берега', () => {
+    const session = new FishingSession({ zones: [[{ species: big, rarity: 1 }]], tackle: TACKLE, rng: seededRng(1), tuning: { ...DEFAULT_TUNING, rushes: false } })
+    hook(session)
+    const modes = new Set<string>()
+    const play = player(session, true)
+    runUntil(session, () => session.phase !== 'fighting', 300, (f) => {
+      modes.add(f.mode)
+      play(f)
+    })
+    expect(session.phase).toBe('caught')
+    expect([...modes]).toEqual(['calm'])
+  })
+
   it('указатель сцены совпадает с механикой: в центре цели противодействие полное, на краю зоны — пороговое', () => {
     const { session } = makeSession([small])
     hook(session)

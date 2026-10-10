@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { Tutorial, type TutorialStepId } from './tutorial.ts'
+import { DEFAULT_TUNING } from '../core/FishingSession.ts'
+import { FIRST_CATCH_TUNING, Tutorial, TUTORIAL_TUNING, type TutorialStepId } from './tutorial.ts'
 
 const id = (t: Tutorial) => t.step?.id ?? null
 
-describe('обучение на первом забросе', () => {
-  it('идёт по шагам: места ловли → заброс → ожидание → поклёвка → шкала → рамка → рывок → серебро → опыт → кнопки', () => {
+/** Первый вылов целиком: от карточки мест ловли до закрытой карточки опыта. */
+function firstCatch(t: Tutorial) {
+  t.next()
+  t.onPhase('casting')
+  t.onPhase('waiting')
+  t.next()
+  t.onPhase('bite')
+  t.onPhase('fighting')
+  t.next()
+  t.next()
+  t.next()
+  t.onPhase('caught')
+  t.next()
+  t.next()
+}
+
+describe('обучение: первый вылов', () => {
+  it('идёт по шагам: места ловли → заброс → ожидание → поклёвка → шкала → рамка → серебро → опыт', () => {
     const t = new Tutorial()
     const seen: (TutorialStepId | null)[] = [id(t)]
     const tap = () => {
@@ -24,28 +41,23 @@ describe('обучение на первом забросе', () => {
     tap()
     tap()
     tap()
-    t.onRushWarning()
+    t.onPhase('caught')
     seen.push(id(t))
     tap()
-    t.onPhase('caught')
-    seen.push(id(t))
-    for (let i = 0; i < 6; i++) tap()
-    expect(seen).toEqual([
-      'zones', 'cast', null, 'wait', null, 'bite', 'tension', 'tensionHold', 'slider', null, 'rush', null,
-      'silver', 'xp', 'tackleButton', 'waterButton', 'baitButton', 'achievementsButton', null,
-    ])
-    expect(t.done).toBe(true)
+    tap()
+    expect(seen).toEqual(['zones', 'cast', null, 'wait', null, 'bite', 'tension', 'tensionHold', 'slider', null, 'silver', 'xp', null])
+    // Впереди второй вылов
+    expect(t.done).toBe(false)
   })
 
-  it('кнопки меню видны только на шагах про них', () => {
+  it('рыба в первом вылове не рвёт, и про рывок не говорим', () => {
     const t = new Tutorial()
-    expect(t.step?.hud).toBeFalsy()
-    t.onPhase('caught')
+    expect(t.tuning).toBe(FIRST_CATCH_TUNING)
+    expect(t.tuning.rushes).toBe(false)
     t.next()
-    expect(t.step?.hud).toBeFalsy() // карточка опыта — ещё на экране улова
-    t.next()
-    expect(id(t)).toBe('tackleButton')
-    expect(t.step?.hud).toBe(true)
+    t.onPhase('casting')
+    t.onRushWarning()
+    expect(id(t)).toBeNull()
   })
 
   it('объяснения — когда игра стоит; заброс ждёт действия игрока, а не тапа по карточке', () => {
@@ -92,27 +104,60 @@ describe('обучение на первом забросе', () => {
     expect(id(t)).toBe('bite')
     t.onPhase('fighting')
     expect(id(t)).toBeNull()
-    expect(t.done).toBe(false)
+    expect(t.tuning).toBe(FIRST_CATCH_TUNING)
   })
+})
 
-  it('рывок объясняется один раз и не перебивает другой шаг', () => {
+describe('обучение: второй вылов', () => {
+  it('рыба рвёт, подсказка — только про рывок, и один раз', () => {
     const t = new Tutorial()
-    t.onRushWarning()
-    expect(id(t)).toBe('zones')
-    t.next()
-    t.onPhase('casting')
+    firstCatch(t)
+    expect(t.tuning).toBe(TUTORIAL_TUNING)
+    expect(t.tuning.rushes).toBe(true)
+
+    for (const phase of ['casting', 'waiting', 'bite', 'fighting'] as const) {
+      t.onPhase(phase)
+      expect(id(t)).toBeNull()
+    }
     t.onRushWarning()
     expect(id(t)).toBe('rush')
+    expect(t.frozen).toBe(true)
     t.next()
     t.onRushWarning()
     expect(id(t)).toBeNull()
   })
 
-  it('после конца обучения на игру больше не реагирует', () => {
+  it('сход — без карточек: обычный экран итога', () => {
     const t = new Tutorial()
+    firstCatch(t)
+    t.onPhase('escaped')
+    expect(id(t)).toBeNull()
+    expect(t.done).toBe(false)
+  })
+
+  it('поймал — обучение пройдено, настройки обычные', () => {
+    const t = new Tutorial()
+    firstCatch(t)
     t.onPhase('caught')
-    for (let i = 0; i < 6; i++) t.next()
     expect(t.done).toBe(true)
+    expect(id(t)).toBeNull()
+    expect(t.tuning).toBe(DEFAULT_TUNING)
+  })
+
+  it('перезашёл после первой рыбы — начинаем со второго вылова', () => {
+    const t = new Tutorial(true)
+    expect(id(t)).toBeNull()
+    expect(t.tuning).toBe(TUTORIAL_TUNING)
+    t.onPhase('waiting')
+    t.onPhase('fighting')
+    expect(id(t)).toBeNull()
+    t.onRushWarning()
+    expect(id(t)).toBe('rush')
+  })
+
+  it('после конца обучения на игру больше не реагирует', () => {
+    const t = new Tutorial(true)
+    t.onPhase('caught')
     t.onPhase('escaped')
     t.onPhase('bite')
     t.onRushWarning()

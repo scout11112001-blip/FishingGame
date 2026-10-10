@@ -24,7 +24,8 @@ export class TacklePanel {
   private readonly shop: Shop
   private readonly onChange: (loadout: Loadout) => void
   private loadout: Loadout
-  private slot: Slot = 'line'
+  /** Открытая вкладка: в первый раз — удочки, потом — та, на которой закрыли. */
+  private slot: Slot = 'rod'
 
   constructor(pack: ContentPack, loadout: Loadout, shop: Shop, onChange: (loadout: Loadout) => void) {
     this.pack = pack

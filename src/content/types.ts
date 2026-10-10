@@ -264,8 +264,6 @@ export interface PackTexts {
   tutorial: {
     /** Внизу карточки, которая закрывается тапом. */
     next: string
-    /** Внизу последней карточки. */
-    finish: string
     steps: Record<Exclude<TutorialStepId, 'silver' | 'xp'>, TutorialText>
     silver: (price: string) => TutorialText
     /** water — ближайший закрытый водоём и сколько опыта для него нужно; null — закрытых нет. */

@@ -19,13 +19,13 @@ describe('магазин снастей', () => {
   it('без серебра не купить, с серебром — списывается цена', () => {
     const shop = new Shop(RIVERS)
     const line = RIVERS.lines[1]
-    expect(shop.shortfall('line', line)).toBe(150)
+    expect(shop.shortfall('line', line)).toBe(100)
     expect(shop.buy('line', line)).toBe(false)
     expect(shop.owns('line', line)).toBe(false)
 
-    shop.earn(100)
-    expect(shop.shortfall('line', line)).toBe(50)
-    shop.earn(70)
+    shop.earn(60)
+    expect(shop.shortfall('line', line)).toBe(40)
+    shop.earn(60)
     expect(shop.buy('line', line)).toBe(true)
     expect(shop.owns('line', line)).toBe(true)
     expect(shop.silver).toBe(20)
@@ -36,7 +36,7 @@ describe('магазин снастей', () => {
     shop.earn(1000)
     shop.buy('rod', RIVERS.rods[1])
     expect(shop.buy('rod', RIVERS.rods[1])).toBe(true)
-    expect(shop.silver).toBe(700)
+    expect(shop.silver).toBe(800)
     expect(shop.shortfall('rod', RIVERS.rods[1])).toBe(0)
   })
 
@@ -51,8 +51,8 @@ describe('магазин снастей', () => {
 
   it('цены рек — по расчёту прогресса', () => {
     const prices = (slot: (typeof SLOTS)[number]) => itemsOf(RIVERS, slot).map((i) => i.price ?? 0)
-    expect(prices('rod')).toEqual([0, 300, 72000])
-    expect(prices('line')).toEqual([0, 150, 7000, 30000])
+    expect(prices('rod')).toEqual([0, 200, 72000])
+    expect(prices('line')).toEqual([0, 100, 7000, 30000])
     expect(prices('reel')).toEqual([0, 1500, 12000, 40000])
   })
 })

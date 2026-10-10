@@ -41,7 +41,7 @@ describe('сохранение прогресса', () => {
     const before = played()
     const after = reload(before)
     expect(after.toSave()).toEqual(before.toSave())
-    expect(after.shop.silver).toBe(550)
+    expect(after.shop.silver).toBe(700)
     expect(after.shop.owns('rod', RIVERS.rods[1])).toBe(true)
     expect(after.loadout.rod).toBe(RIVERS.rods[1])
     expect(after.water).toBe(RIVER)
@@ -163,12 +163,12 @@ describe('награда за вход и запас прикормок', () => 
   it('награда дня: серебро и прикормка в запас; второй раз за день — ничего', () => {
     const p = new PlayerState(RIVERS)
     expect(p.claimDaily('2026-10-01')).toEqual(RIVERS.daily[0])
-    expect(p.shop.silver).toBe(200)
+    expect(p.shop.silver).toBe(100)
     expect(p.claimDaily('2026-10-01')).toBeNull()
-    expect(p.shop.silver).toBe(200)
+    expect(p.shop.silver).toBe(100)
 
     p.claimDaily('2026-10-02')
-    expect(p.shop.silver).toBe(400)
+    expect(p.shop.silver).toBe(300)
     expect(p.baitCount(RIVERS.baits[0])).toBe(1)
   })
 

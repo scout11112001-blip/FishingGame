@@ -1,7 +1,8 @@
 import { DEFAULT_TUNING, type Phase, type Tuning } from '../core/FishingSession.ts'
 
-// Обучение на первом забросе: по шагу на каждую механику. Ничего не знает ни о графике, ни об HTML —
+// Обучение — на двух первых уловах: по шагу на каждую механику. Ничего не знает ни о графике, ни об HTML —
 // только какой шаг сейчас и когда переходить к следующему. Сцена сообщает о событиях игры и рисует шаг.
+// Первый вылов — всё, кроме рывка: рыба не рвёт. Второй игрок ловит сам, подсказка — только про рывок.
 
 export type TutorialStepId =
   | 'zones'
@@ -15,25 +16,9 @@ export type TutorialStepId =
   | 'escaped'
   | 'silver'
   | 'xp'
-  | 'tackleButton'
-  | 'waterButton'
-  | 'baitButton'
-  | 'achievementsButton'
 
 /** Что подсветить на экране. null — ничего: карточка посередине. */
-export type TutorialTarget =
-  | 'water'
-  | 'nearZone'
-  | 'float'
-  | 'effortBar'
-  | 'rodStrip'
-  | 'silver'
-  | 'xp'
-  | 'tackleButton'
-  | 'waterButton'
-  | 'baitButton'
-  | 'achievementsButton'
-  | null
+export type TutorialTarget = 'water' | 'nearZone' | 'float' | 'effortBar' | 'rodStrip' | 'silver' | 'xp' | null
 
 export interface TutorialStep {
   id: TutorialStepId
@@ -42,8 +27,6 @@ export interface TutorialStep {
   freeze: boolean
   /** Шаг закрывается тапом по экрану. Иначе тап уходит в игру — шаг ждёт действия игрока (заброс, подсечку). */
   tapToContinue: boolean
-  /** Кнопки меню видны: шаг про них. В остальное время обучения они спрятаны. */
-  hud?: boolean
 }
 
 const STEPS: Record<TutorialStepId, TutorialStep> = {
@@ -58,15 +41,7 @@ const STEPS: Record<TutorialStepId, TutorialStep> = {
   escaped: { id: 'escaped', target: null, freeze: true, tapToContinue: true },
   silver: { id: 'silver', target: 'silver', freeze: true, tapToContinue: true },
   xp: { id: 'xp', target: 'xp', freeze: true, tapToContinue: true },
-  // Кнопки меню — по карточке на каждую. Сами меню не открываем: тап по кнопке просто листает дальше
-  tackleButton: { id: 'tackleButton', target: 'tackleButton', freeze: true, tapToContinue: true, hud: true },
-  waterButton: { id: 'waterButton', target: 'waterButton', freeze: true, tapToContinue: true, hud: true },
-  baitButton: { id: 'baitButton', target: 'baitButton', freeze: true, tapToContinue: true, hud: true },
-  achievementsButton: { id: 'achievementsButton', target: 'achievementsButton', freeze: true, tapToContinue: true, hud: true },
 }
-
-/** Последний шаг обучения: после него — обычная игра. */
-export const LAST_STEP: TutorialStepId = 'achievementsButton'
 
 /** Что идёт следом за шагом, закрытым тапом. null — шаг просто гаснет, игра продолжается. */
 const AFTER: Partial<Record<TutorialStepId, TutorialStepId>> = {
@@ -75,15 +50,11 @@ const AFTER: Partial<Record<TutorialStepId, TutorialStepId>> = {
   tensionHold: 'slider',
   escaped: 'cast',
   silver: 'xp',
-  xp: 'tackleButton',
-  tackleButton: 'waterButton',
-  waterButton: 'baitButton',
-  baitButton: 'achievementsButton',
 }
 
 /**
- * Пока идёт обучение, рыбалка мягче: поклёвка быстрее, рывок наступает вскоре после объяснений,
- * а на ошибку больше запаса — первая рыба должна попасться, даже если игрок ещё путается.
+ * Пока идёт обучение, рыбалка мягче: поклёвка быстрее, рывок наступает вскоре после начала боя,
+ * а на ошибку больше запаса — рыба должна попасться, даже если игрок ещё путается.
  */
 export const TUTORIAL_TUNING: Tuning = {
   ...DEFAULT_TUNING,
@@ -96,14 +67,25 @@ export const TUTORIAL_TUNING: Tuning = {
   breakGraceWeakBonus: 3,
 }
 
+/** Первый вылов: всё то же, но рыба не рвёт — новичку и без рывка есть что освоить. */
+export const FIRST_CATCH_TUNING: Tuning = { ...TUTORIAL_TUNING, rushes: false }
+
 /** Размер рыбы в обучении (0..1): покрупнее средней — рывок заметен, а улов радует. */
 export const TUTORIAL_FISH_SIZE = 0.8
 
 export class Tutorial {
-  private _step: TutorialStep | null = STEPS.zones
+  /** Который вылов идёт: 1 — с объяснениями, 2 — сам, с подсказкой про рывок. */
+  private _catch: 1 | 2
+  private _step: TutorialStep | null
   private _done = false
   /** Объяснения механик показываем по разу: после схода игрок ловит снова, но без повторов. */
   private readonly shown = new Set<TutorialStepId>(['zones'])
+
+  /** secondCatch — первую рыбу игрок уже поймал (и перезашёл): начинаем со второго вылова. */
+  constructor(secondCatch = false) {
+    this._catch = secondCatch ? 2 : 1
+    this._step = secondCatch ? null : STEPS.zones
+  }
 
   get step(): TutorialStep | null {
     return this._step
@@ -118,6 +100,12 @@ export class Tutorial {
     return !!this._step?.freeze
   }
 
+  /** Настройки рыбалки на этом этапе. Сцена меняет их между забросами. */
+  get tuning(): Tuning {
+    if (this._done) return DEFAULT_TUNING
+    return this._catch === 1 ? FIRST_CATCH_TUNING : TUTORIAL_TUNING
+  }
+
   /** Игрок тапнул по карточке шага. Возвращает закрытый шаг — сцене бывает нужно что-то сделать вслед. */
   next(): TutorialStepId | null {
     const step = this._step
@@ -125,13 +113,20 @@ export class Tutorial {
     const after = AFTER[step.id]
     this._step = after ? STEPS[after] : null
     if (after) this.shown.add(after)
-    if (step.id === LAST_STEP) this._done = true
     return step.id
   }
 
   /** Сменилась фаза рыбалки. */
   onPhase(phase: Phase): void {
     if (this._done) return
+    // Второй вылов игрок ведёт сам: сорвалась — обычный экран итога, поймал — обучение пройдено
+    if (this._catch === 2) {
+      if (phase === 'caught') {
+        this._done = true
+        this._step = null
+      }
+      return
+    }
     switch (phase) {
       case 'casting':
         if (this._step?.id === 'cast') this._step = null
@@ -151,14 +146,15 @@ export class Tutorial {
         this.show('escaped')
         break
       case 'caught':
+        this._catch = 2
         this.show('silver')
         break
     }
   }
 
-  /** Рыба вот-вот рванёт — в бою появилось предупреждение. */
+  /** Рыба вот-вот рванёт — в бою появилось предупреждение. Рывки — только во втором вылове. */
   onRushWarning(): void {
-    if (!this._done && !this._step) this.showOnce('rush')
+    if (this._catch === 2 && !this._done && !this._step) this.showOnce('rush')
   }
 
   private showOnce(id: TutorialStepId) {

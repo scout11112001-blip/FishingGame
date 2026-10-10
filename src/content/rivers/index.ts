@@ -127,11 +127,11 @@ const LAKE: WaterBody = {
 // полная снасть — примерно за 7,5 часа игры. Без цены — стартовая снасть.
 // Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба
 const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
-const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp', price: 300 }
+const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp', price: 200 }
 const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к руслу, омутам и глубокой яме озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp', price: 72000 }
 
 const LINE_02: Line = { id: 'mono02', name: 'Леска 0,2 мм', description: 'Для плотвы, карася и окуня', strength: 1 }
-const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3, price: 150 }
+const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3, price: 100 }
 const BRAID: Line = { id: 'braid', name: 'Плетёнка', description: 'Для щуки и судака', strength: 1.7, price: 7000 }
 // Под крупного сома: без неё его рывок поднимает усилие быстрее, чем оно падает с отпущенным пальцем
 const CATFISH_CORD: Line = { id: 'catfishCord', name: 'Сомовий шнур', description: 'Выдержит рывки крупного сома', strength: 3.2, price: 30000 }
@@ -170,7 +170,7 @@ export const RIVERS: ContentPack = {
   lines: [LINE_02, LINE_03, BRAID, CATFISH_CORD],
   reels: [BASIC_REEL, SPINNING_REEL, MULTIPLIER_REEL, POWER_REEL],
   baits: [BREAM_BAIT, ZANDER_BAIT, CATFISH_BAIT],
-  daily: [{ silver: 200 }, { silver: 200, bait: BREAM_BAIT }, { silver: 200, bait: ZANDER_BAIT }, { silver: 500, bait: CATFISH_BAIT }],
+  daily: [{ silver: 100 }, { silver: 200, bait: BREAM_BAIT }, { silver: 200, bait: ZANDER_BAIT }, { silver: 500, bait: CATFISH_BAIT }],
   starter: { rod: BAMBOO, line: LINE_02, reel: BASIC_REEL },
   art: {
     float: 'sprites/float.webp',

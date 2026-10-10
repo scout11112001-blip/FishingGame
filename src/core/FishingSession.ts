@@ -64,6 +64,8 @@ export interface Tuning {
   zoneTop: number
   /** Сколько усилия в секунду добавляет рывок рыбы силой 1. */
   rushGain: number
+  /** Рвёт ли рыба вообще. Нет — так и водит спокойно (первый вылов в обучении). */
+  rushes: boolean
 
   calmMin: number
   calmMax: number
@@ -108,7 +110,7 @@ export const DEFAULT_TUNING: Tuning = {
   biteDelayMax: 7,
   nibbleGapMin: 0.8,
   nibbleGapMax: 2,
-  hookWindow: 0.9,
+  hookWindow: 1.8,
   hookEffort: 0.3,
 
   effortRise: 0.25,
@@ -117,6 +119,7 @@ export const DEFAULT_TUNING: Tuning = {
   needPerPower: 0.4,
   zoneTop: 0.85,
   rushGain: 0.8,
+  rushes: true,
 
   calmMin: 4,
   calmMax: 7,
@@ -474,7 +477,7 @@ export class FishingSession {
 
     // Смена поведения: спокойно → предупреждение → рывок в другую сторону → спокойно
     f.modeLeft -= dt
-    if (f.modeLeft <= 0) {
+    if (f.modeLeft <= 0 && t.rushes) {
       if (f.mode === 'calm') {
         f.mode = 'warn'
         f.modeLeft = t.rushWarn
