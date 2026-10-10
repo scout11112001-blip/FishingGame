@@ -7,6 +7,23 @@ import { CATFISH, CRUCIAN, ROACH } from './rivers/fish.ts'
 
 const small = (species = ROACH) => makeFish(species, 0)
 
+describe('трофеи хижины', () => {
+  it('трофей — первая рыба вида и каждая крупнее прежнего рекорда; с датой поимки', () => {
+    const log = new AchievementLog(RIVERS)
+    const fish = (kg: number) => ({ ...small(CRUCIAN), weightKg: kg })
+    expect(log.isTrophy(fish(0.2))).toBe(true)
+    log.onCatch(fish(0.2), 1, 100)
+    expect(log.isTrophy(fish(0.2))).toBe(false)
+    expect(log.isTrophy(fish(0.19))).toBe(false)
+    log.onCatch(fish(0.19), 2, 200)
+    expect(log.stats.bestAt.crucian).toBe(100)
+    expect(log.isTrophy(fish(0.3))).toBe(true)
+    log.onCatch(fish(0.3), 3, 300)
+    expect(log.stats.best.crucian).toBe(0.3)
+    expect(log.stats.bestAt.crucian).toBe(300)
+  })
+})
+
 describe('достижения', () => {
   it.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s: id уникальны (по ним будут сохранения)', (_id, pack) => {
     const ids = achievementsOf(pack).map((a) => a.id)

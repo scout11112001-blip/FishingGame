@@ -659,3 +659,186 @@ body {
   margin-top: 8px;
   font-size: 14px;
 }
+
+/* Хижина: всё окно прокручивается одним списком — комната сверху, ниже мебель и стена трофеев */
+.cabin-scroll {
+  flex: 1;
+  min-height: 0;
+  margin: 12px 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+/* Квадрат комнаты: предметы стоят в долях его стороны, торчащее вверх (труба печки) обрезается */
+.cabin-room {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #3a2618;
+}
+
+.cabin-interior {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cabin-piece {
+  position: absolute;
+}
+
+.cabin-piece[hidden] {
+  display: none;
+}
+
+.cabin-piece img {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+/* Мягкая тень под ножками: картинки нарисованы без пола, без тени предмет висел бы в воздухе */
+.cabin-shadow {
+  position: absolute;
+  bottom: 0;
+  aspect-ratio: 6;
+  transform: translateY(50%);
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.25) 60%, transparent);
+}
+
+/* Только что купленный предмет «встаёт» на место */
+.cabin-piece.fresh {
+  animation: cabin-place 0.5s ease-out;
+  transform-origin: 50% 100%;
+}
+
+@keyframes cabin-place {
+  0% {
+    opacity: 0;
+    transform: translateY(-12%) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(0) scale(1.03);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.cabin-empty {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 10%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(11, 42, 58, 0.78);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.cabin-empty[hidden] {
+  display: none;
+}
+
+.cabin-heading {
+  margin: 18px 0 8px;
+  font-size: 18px;
+}
+
+.cabin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Мебель: картинка слева, текст справа */
+.cabin-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cabin-card.selected {
+  cursor: default;
+}
+
+.cabin-card-icon {
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cabin-card-icon img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.cabin-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Стена трофеев: таблички на тёмном дереве */
+.cabin-wall {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cabin-trophy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 2px solid #9a7840;
+  border-radius: 10px;
+  background: linear-gradient(#5a3a22, #3f2716);
+  text-align: center;
+}
+
+.cabin-trophy img {
+  width: 100%;
+  height: 52px;
+  margin-bottom: 4px;
+  object-fit: contain;
+}
+
+/* Не пойманная — тёмный силуэт: видно, кого ещё не хватает */
+.cabin-trophy.missing {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--ui-card);
+}
+
+.cabin-trophy.missing img {
+  filter: brightness(0);
+  opacity: 0.45;
+}
+
+.cabin-trophy-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cabin-trophy-weight {
+  color: var(--ui-stat);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cabin-trophy-date {
+  color: var(--ui-muted);
+  font-size: 13px;
+}

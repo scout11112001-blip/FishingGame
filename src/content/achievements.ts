@@ -18,6 +18,8 @@ export interface PlayerStats {
   bySpecies: Record<string, number>
   /** Самая тяжёлая рыба вида: id → кг. */
   best: Record<string, number>
+  /** Когда она поймана: id → время (мс). У рекордов из старых сохранений даты нет. */
+  bestAt: Record<string, number>
   xp: number
 }
 
@@ -39,7 +41,7 @@ export interface Achievement {
 }
 
 export function emptyStats(): PlayerStats {
-  return { catches: 0, bySpecies: {}, best: {}, xp: 0 }
+  return { catches: 0, bySpecies: {}, best: {}, bestAt: {}, xp: 0 }
 }
 
 /** Вес рекорда вида, округлённый вверх до сотых, — как округляется вес пойманной рыбы. */
@@ -109,13 +111,21 @@ export class AchievementLog {
     this.list = achievementsOf(pack)
   }
 
-  /** Учесть пойманную рыбу и опыт после неё. Возвращает достижения, засчитанные этой рыбой. */
-  onCatch(fish: HookedFish, xp: number): Achievement[] {
+  /** Побьёт ли рыба рекорд своего вида — станет новым трофеем хижины. Первая рыба вида — тоже трофей. */
+  isTrophy(fish: HookedFish): boolean {
+    return fish.weightKg > (this.stats.best[fish.species.id] ?? 0)
+  }
+
+  /** Учесть пойманную рыбу и опыт после неё; at — когда поймана. Возвращает достижения, засчитанные этой рыбой. */
+  onCatch(fish: HookedFish, xp: number, at = Date.now()): Achievement[] {
     const s = this.stats
     const id = fish.species.id
     s.catches++
     s.bySpecies[id] = (s.bySpecies[id] ?? 0) + 1
-    s.best[id] = Math.max(s.best[id] ?? 0, fish.weightKg)
+    if (this.isTrophy(fish)) {
+      s.best[id] = fish.weightKg
+      s.bestAt[id] = at
+    }
     s.xp = xp
     const fresh = this.list.filter((a) => !this.done.has(a.id) && isDone(a, s))
     for (const a of fresh) {

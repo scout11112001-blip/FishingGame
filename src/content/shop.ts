@@ -34,6 +34,13 @@ export class Shop {
     this._silver += Math.max(0, amount)
   }
 
+  /** Потратить серебро не на снасть (мебель хижины). false — не хватает, ничего не списано. */
+  spend(amount: number): boolean {
+    if (amount > this._silver) return false
+    this._silver -= Math.max(0, amount)
+    return true
+  }
+
   owns(slot: Slot, item: TackleItem): boolean {
     return this.owned.has(keyOf(slot, item))
   }

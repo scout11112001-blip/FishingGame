@@ -27,6 +27,36 @@ export interface ContentPack {
   art?: PackArt
   /** Звуки. Без них игра просто молчит. */
   sounds?: PackSounds
+  /** Хижина: мебель за серебро и стена трофеев. Нет — нет и кнопки. */
+  cabin?: CabinContent
+}
+
+/** Хижина рыбака — цель на позднюю игру: мебель только для красоты, без бонусов. */
+export interface CabinContent {
+  /** Пустая комната — квадратная картинка относительно public/. */
+  interior: string
+  /** В порядке цены: так и показываются в списке. */
+  furniture: readonly Furniture[]
+}
+
+export interface Furniture {
+  id: string
+  name: string
+  description?: string
+  price: number
+  /** Картинка на прозрачном фоне относительно public/. */
+  sprite: string
+  /** Значок в списке, если сама картинка для него слишком вытянута (печка с трубой). Нет — сама картинка. */
+  icon?: string
+  /**
+   * Где стоит на картинке комнаты, в долях её стороны: x — середина, bottom — где касается пола (или стола),
+   * width — ширина. Высота — по пропорциям картинки; что выше комнаты (труба печки) — обрезается.
+   */
+  place: { x: number; bottom: number; width: number }
+  /** Ширина тени под предметом — доля его ширины. По умолчанию почти во всю ширину. */
+  shadow?: number
+  /** Стоит на другом предмете (самовар на столе): без него не купить. */
+  on?: string
 }
 
 /** Звуки пакета — пути относительно public/. Готовит их скрипт npm run audio из исходников в art/audio. */
@@ -283,6 +313,26 @@ export interface PackTexts {
     progress: (value: number, target: number) => string
     best: (kg: string) => string
     done: string
+  }
+  cabin: {
+    button: string
+    title: string
+    /** Поверх пустой комнаты, пока ничего не куплено. */
+    empty: string
+    furniture: string
+    /** Метка купленного предмета. */
+    placed: string
+    /** Предмет стоит на другом, которого ещё нет: подставляется его название. */
+    needs: (base: string) => string
+    trophies: string
+    /** Под заголовком стены: что на ней висит. */
+    trophiesNote: string
+    notCaught: string
+    weight: (kg: string) => string
+    /** Дата трофея: «6 окт 2026». */
+    date: (date: Date) => string
+    /** На экране улова, когда рыба побила рекорд своего вида. */
+    newTrophy: string
   }
   waters: {
     button: string

@@ -1,5 +1,7 @@
 import type { PackTexts } from '../types.ts'
 
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+
 export const RIVERS_TEXTS: PackTexts = {
   wallet: 'Серебро',
   xp: 'Опыт⭐',
@@ -116,6 +118,20 @@ export const RIVERS_TEXTS: PackTexts = {
       title: '⭐ Опыт!',
       text: water ? `Каждая рыба — +1 опыта. Набери ${xp} — и откроется ${water}!` : 'Каждая рыба — +1 опыта. Опыт открывает новые водоёмы!',
     }),
+  },
+  cabin: {
+    button: 'Хижина',
+    title: 'Хижина',
+    empty: 'Пока пусто. Обставь хижину — мебель ниже 👇',
+    furniture: 'Обстановка',
+    placed: 'Стоит в хижине',
+    needs: (base) => `Ставится на ${base.toLocaleLowerCase('ru')} — сначала купи его`,
+    trophies: 'Стена трофеев',
+    trophiesNote: 'Самая крупная рыба каждого вида. Поймаешь крупнее — трофей обновится.',
+    notCaught: 'Ещё не пойман',
+    weight: (kg) => `${kg} кг`,
+    date: (d) => `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+    newTrophy: '🏠 Новый трофей — на стену хижины!',
   },
   achievements: {
     button: 'Достижения',

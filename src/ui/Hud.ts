@@ -4,6 +4,7 @@ import { button, el } from './dom.ts'
 export class Hud {
   private readonly bar: HTMLDivElement
   private readonly top: HTMLDivElement
+  private lastTopWidth = 0
 
   constructor() {
     this.bar = el('div', 'hud-bar')
@@ -35,6 +36,13 @@ export class Hud {
   setAlert(b: HTMLButtonElement, on: boolean): void {
     const alert = b.querySelector<HTMLElement>('.hud-alert')
     if (alert && alert.hidden !== !on) alert.hidden = !on
+  }
+
+  /** Ширина кнопок вверху справа, CSS-пиксели. Пока они спрятаны (бой, обучение) — последняя измеренная. */
+  get topWidth(): number {
+    const w = this.top.getBoundingClientRect().width
+    if (w) this.lastTopWidth = w
+    return this.lastTopWidth
   }
 
   setVisible(visible: boolean): void {

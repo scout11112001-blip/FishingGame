@@ -206,3 +206,68 @@ describe('награда за вход и запас прикормок', () => 
     for (let i = 0; i < 3; i++) expect(p.useBait(RIVERS.baits[2], NOW + i * BAIT_DURATION_MS)).toBe(true)
   })
 })
+
+describe('хижина', () => {
+  const cabin = RIVERS.cabin!
+  const item = (id: string) => cabin.furniture.find((f) => f.id === id)!
+
+  it('мебель покупается за серебро; не хватает — ничего не списано', () => {
+    const p = new PlayerState(RIVERS)
+    const rack = item('rodRack')
+    p.shop.earn(rack.price - 1)
+    expect(p.buyFurniture(rack)).toBe(false)
+    expect(p.shop.silver).toBe(rack.price - 1)
+    p.shop.earn(1)
+    expect(p.buyFurniture(rack)).toBe(true)
+    expect(p.ownsFurniture(rack)).toBe(true)
+    expect(p.shop.silver).toBe(0)
+    // Второй раз — без списания
+    expect(p.buyFurniture(rack)).toBe(true)
+  })
+
+  it('самовар — только на стол: без стола не купить даже с серебром', () => {
+    const p = new PlayerState(RIVERS)
+    p.shop.earn(1_000_000)
+    const samovar = item('samovar')
+    expect(p.missingBase(samovar)).toBe(item('table'))
+    expect(p.buyFurniture(samovar)).toBe(false)
+    expect(p.shop.silver).toBe(1_000_000)
+    p.buyFurniture(item('table'))
+    expect(p.missingBase(samovar)).toBeNull()
+    expect(p.buyFurniture(samovar)).toBe(true)
+  })
+
+  it('купленная мебель и даты рекордов переживают перезагрузку; чужие id пропускаются', () => {
+    const p = played()
+    p.shop.earn(10_000)
+    p.buyFurniture(item('stool'))
+    p.achievements.onCatch(makeFish(PIKE, 0.5), p.xp + 1, NOW)
+    const after = reload(p, NOW, (d) => d.furniture.push('диван-из-будущего'))
+    expect([...after.furniture]).toEqual(['stool'])
+    expect(after.achievements.stats.bestAt[PIKE.id]).toBe(NOW)
+  })
+
+  it('старое сохранение без мебели и дат рекордов читается: мебели нет, рекорды без даты', () => {
+    const old: Record<string, unknown> = { ...played().toSave() }
+    delete old.furniture
+    old.stats = { ...(old.stats as object), bestAt: undefined }
+    const p = new PlayerState(RIVERS)
+    p.restore(parseSave(JSON.stringify(old))!, NOW)
+    expect(p.furniture.size).toBe(0)
+    expect(p.achievements.stats.best.crucian).toBeGreaterThan(0)
+    expect(p.achievements.stats.bestAt).toEqual({})
+  })
+
+  it('в тестовой версии хижина обставлена целиком', () => {
+    const p = new PlayerState(RIVERS, { unlockAll: true })
+    for (const f of cabin.furniture) expect(p.ownsFurniture(f), f.name).toBe(true)
+  })
+
+  it('мебель в пакете: id уникальны, цены растут, подставка есть в пакете', () => {
+    const ids = cabin.furniture.map((f) => f.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    const prices = cabin.furniture.map((f) => f.price)
+    expect(prices).toEqual([...prices].sort((a, b) => a - b))
+    for (const f of cabin.furniture) if (f.on) expect(ids).toContain(f.on)
+  })
+})

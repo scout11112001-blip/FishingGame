@@ -1,5 +1,5 @@
 import type { FishSpawn } from '../../core/fish.ts'
-import type { Bait, ContentPack, Line, Reel, Rod, WaterBody } from '../types.ts'
+import type { Bait, CabinContent, ContentPack, Line, Reel, Rod, WaterBody } from '../types.ts'
 import { ALL_FISH, BREAM, CATFISH, CRUCIAN, PERCH, PIKE, ROACH, ZANDER } from './fish.ts'
 import { RIVERS_TEXTS } from './texts.ts'
 
@@ -161,6 +161,64 @@ const CATFISH_BAIT: Bait = {
   species: CATFISH,
 }
 
+// Хижина: места подобраны по картинке комнаты — печка в левом углу, стойка в правом, стол под окном
+const CABIN: CabinContent = {
+  interior: 'cabin/interior.webp',
+  furniture: [
+    {
+      id: 'rodRack',
+      name: 'Стойка для удочек',
+      description: 'Удочки не в углу, а в ряд. И подсак под рукой',
+      price: 2000,
+      sprite: 'cabin/rod-rack.webp',
+      place: { x: 0.85, bottom: 0.79, width: 0.15 },
+    },
+    {
+      id: 'stool',
+      name: 'Табурет',
+      description: 'Простой, но крепкий. Присесть, перемотать леску',
+      price: 5000,
+      sprite: 'cabin/stool.webp',
+      place: { x: 0.29, bottom: 0.95, width: 0.12 },
+    },
+    {
+      id: 'table',
+      name: 'Стол',
+      description: 'Тяжёлый, из толстых досок. Есть где разложить снасти — и поставить самовар',
+      price: 10000,
+      sprite: 'cabin/table.webp',
+      place: { x: 0.47, bottom: 0.86, width: 0.38 },
+    },
+    {
+      id: 'stove',
+      name: 'Печка-буржуйка',
+      description: 'Чугунная, с окошком. Трещат дрова — в хижине тепло даже поздней осенью',
+      price: 60000,
+      sprite: 'cabin/stove.webp',
+      icon: 'cabin/stove-icon.webp',
+      place: { x: 0.2, bottom: 0.79, width: 0.17 },
+    },
+    {
+      id: 'rockingChair',
+      name: 'Кресло-качалка',
+      description: 'С клетчатым пледом. Покачаться у окна после долгой рыбалки',
+      price: 80000,
+      sprite: 'cabin/rocking-chair.webp',
+      place: { x: 0.77, bottom: 0.99, width: 0.31 },
+    },
+    {
+      id: 'samovar',
+      name: 'Самовар',
+      description: 'Медный, начищенный до блеска. Ставится на стол',
+      price: 100000,
+      sprite: 'cabin/samovar.webp',
+      place: { x: 0.52, bottom: 0.71, width: 0.105 },
+      shadow: 0.8,
+      on: 'table',
+    },
+  ],
+}
+
 export const RIVERS: ContentPack = {
   id: 'rivers',
   title: 'Рыбалка',
@@ -183,5 +241,6 @@ export const RIVERS: ContentPack = {
     catch: 'audio/catch.wav',
     ambient: 'audio/ambient-river.wav',
   },
+  cabin: CABIN,
   texts: RIVERS_TEXTS,
 }

@@ -1,12 +1,13 @@
 // Готовит картинки для игры из картинок нейросети. Запуск: npm run art
 // - Фоны водоёмов (art/bg → public/bg): увеличивает нейросетью Real-ESRGAN — исходники нейросети мелкие
 //   и мыльные, — уменьшает до нужного размера и сохраняет в WebP. Без апскейлера в tools/ — просто перекодирует.
-// - Спрайты (art/sprites → public/sprites): вырезает однотонный фон, обрезает пустые поля,
-//   уменьшает и сохраняет в WebP с прозрачностью.
+// - Спрайты (art/sprites → public/sprites, мебель art/cabin → public/cabin): вырезает однотонный фон,
+//   обрезает пустые поля, уменьшает и сохраняет в WebP с прозрачностью.
+// - Комната хижины (art/cabin/interior.jpg → public/cabin): просто перекодирует.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 
 /** Апскейлер: github.com/xinntao/Real-ESRGAN/releases, архив realesrgan-ncnn-vulkan-…-windows.zip. */
@@ -40,27 +41,58 @@ try {
   rmSync(temp, { recursive: true, force: true })
 }
 
+// Комната хижины: в окне игры она не шире ~800 px даже на плотном экране — исходника хватает без увеличения
+const INTERIOR = 'art/cabin/interior.jpg'
+if (existsSync(INTERIOR)) {
+  mkdirSync('public/cabin', { recursive: true })
+  const result = await sharp(INTERIOR).resize({ width: 1024, withoutEnlargement: true }).webp({ quality: 82, effort: 6 }).toFile('public/cabin/interior.webp')
+  console.log(`${INTERIOR} → public/cabin/interior.webp: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
+} else console.warn(`Нет ${INTERIOR} — пропускаю`)
+
 interface Job {
+  /** Относительно art/. */
   src: string
+  /** Относительно public/, без расширения. */
   out: string
   /** Размер по длинной стороне после обрезки полей: больше не нужно даже на плотном экране. */
   size: number
+  /**
+   * Предмет упирается верхом в край картинки (труба печки): продлить его верхний ряд вверх на такую долю высоты.
+   * Так труба в хижине уходит под потолок, а не обрывается посреди стены.
+   */
+  extendTop?: number
+  /** Отрезать сверху такую долю исходника (значок печки — без длинной трубы). */
+  cropTop?: number
+  /**
+   * Своего розового в предмете нет (мебель): отсвет фона убираем по всей картинке, а не только у краёв —
+   * в дырочках сетки подсака и прорезях самовара фон смешан с предметом и краем не считается.
+   */
+  despillAll?: boolean
 }
 
 const JOBS: Job[] = [
-  { src: 'float.jpg', out: 'float', size: 512 },
+  { src: 'sprites/float.jpg', out: 'sprites/float', size: 512 },
   // Значок серебра в строке счётчиков: на экране около 20 px, 128 — с запасом на плотный экран
-  { src: 'silver.jpg', out: 'silver', size: 128 },
-  { src: 'rod1.jpg', out: 'rod-bamboo', size: 1024 },
-  { src: 'rod2.jpg', out: 'rod-bolognese', size: 1024 },
-  { src: 'rod3.jpg', out: 'rod-feeder', size: 1024 },
-  { src: 'plotva.jpg', out: 'roach', size: 720 },
-  { src: 'karas.jpg', out: 'crucian', size: 720 },
-  { src: 'okun.jpg', out: 'perch', size: 720 },
-  { src: 'lesh.jpg', out: 'bream', size: 720 },
-  { src: 'sudak.jpg', out: 'zander', size: 720 },
-  { src: 'shuka.jpg', out: 'pike', size: 720 },
-  { src: 'som.jpg', out: 'catfish', size: 720 },
+  { src: 'sprites/silver.jpg', out: 'sprites/silver', size: 128 },
+  { src: 'sprites/rod1.jpg', out: 'sprites/rod-bamboo', size: 1024 },
+  { src: 'sprites/rod2.jpg', out: 'sprites/rod-bolognese', size: 1024 },
+  { src: 'sprites/rod3.jpg', out: 'sprites/rod-feeder', size: 1024 },
+  { src: 'sprites/plotva.jpg', out: 'sprites/roach', size: 720 },
+  { src: 'sprites/karas.jpg', out: 'sprites/crucian', size: 720 },
+  { src: 'sprites/okun.jpg', out: 'sprites/perch', size: 720 },
+  { src: 'sprites/lesh.jpg', out: 'sprites/bream', size: 720 },
+  { src: 'sprites/sudak.jpg', out: 'sprites/zander', size: 720 },
+  { src: 'sprites/shuka.jpg', out: 'sprites/pike', size: 720 },
+  { src: 'sprites/som.jpg', out: 'sprites/catfish', size: 720 },
+  // Мебель хижины: в комнате шириной ~800 px на плотном экране самый крупный предмет — около 600 px
+  { src: 'cabin/smallChair.jpg', out: 'cabin/stool', size: 512, despillAll: true },
+  { src: 'cabin/table.jpg', out: 'cabin/table', size: 640, despillAll: true },
+  { src: 'cabin/rods.jpg', out: 'cabin/rod-rack', size: 640, despillAll: true },
+  { src: 'cabin/stove.jpg', out: 'cabin/stove', size: 1024, extendTop: 1, despillAll: true },
+  // Значок в списке: целиком печка с трубой в квадрате 60 px — тонкая палочка
+  { src: 'cabin/stove.jpg', out: 'cabin/stove-icon', size: 256, cropTop: 0.36, despillAll: true },
+  { src: 'cabin/chair.jpg', out: 'cabin/rocking-chair', size: 640, despillAll: true },
+  { src: 'cabin/samovar.jpg', out: 'cabin/samovar', size: 384, despillAll: true },
 ]
 
 /** Отличие от цвета фона (0..441): ниже SOLID — точно фон, выше EDGE — точно предмет, между — мягкий край. */
@@ -71,32 +103,53 @@ const PADDING = 4
 /** Насколько далеко от прозрачного края искать розовый отсвет фона: тонкие детали (усы сома) целиком в этой полосе. */
 const SPILL_BAND = 8
 
-mkdirSync('public/sprites', { recursive: true })
-
 for (const job of JOBS) {
-  if (!existsSync(`art/sprites/${job.src}`)) {
-    console.warn(`Нет art/sprites/${job.src} — пропускаю`)
+  if (!existsSync(`art/${job.src}`)) {
+    console.warn(`Нет art/${job.src} — пропускаю`)
     continue
   }
-  const { data, info } = await sharp(`art/sprites/${job.src}`).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  let source = sharp(`art/${job.src}`)
+  if (job.cropTop) {
+    const meta = await source.metadata()
+    const cut = Math.round(meta.height * job.cropTop)
+    source = sharp(await source.extract({ left: 0, top: cut, width: meta.width, height: meta.height - cut }).toBuffer())
+  }
+  const { data, info } = await source.ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   const { width, height } = info
   const bg = borderColor(data, width, height)
   const magenta = isMagenta(bg)
   keyOut(data, width, height, bg, magenta)
-  if (magenta) despillMagenta(data, width, height)
+  if (magenta) despillMagenta(data, width, height, job.despillAll ? Infinity : SPILL_BAND)
   const box = opaqueBox(data, width, height)
 
   const left = Math.max(0, box.left - PADDING)
   const top = Math.max(0, box.top - PADDING)
   const cropW = Math.min(width, box.right + PADDING + 1) - left
   const cropH = Math.min(height, box.bottom + PADDING + 1) - top
-  const out = `public/sprites/${job.out}.webp`
-  const result = await sharp(data, { raw: { width, height, channels: 4 } })
-    .extract({ left, top, width: cropW, height: cropH })
+  const out = `public/${job.out}.webp`
+  mkdirSync(dirname(out), { recursive: true })
+  let image = sharp(data, { raw: { width, height, channels: 4 } }).extract({ left, top, width: cropW, height: cropH })
+  if (job.extendTop) image = await extendTop(image, cropW, cropH, box.top - top, job.extendTop)
+  const result = await image
     .resize({ width: job.size, height: job.size, fit: 'inside', withoutEnlargement: true })
     .webp({ quality: 85, alphaQuality: 90, effort: 6 })
     .toFile(out)
   console.log(`${job.src} → ${out}: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ, фон rgb(${bg.join(', ')})`)
+}
+
+/**
+ * Продлить картинку вверх, повторяя её верхний ряд: first — первый непрозрачный ряд, share — на какую долю высоты.
+ * Берём ряд чуть ниже края: самый крайний у нейросети бывает смазан сжатием.
+ */
+async function extendTop(image: sharp.Sharp, width: number, height: number, first: number, share: number): Promise<sharp.Sharp> {
+  const crop = await image.raw().toBuffer()
+  const extra = Math.round(height * share)
+  const rowBytes = width * 4
+  const row = crop.subarray((first + 2) * rowBytes, (first + 3) * rowBytes)
+  const out = Buffer.alloc((height + extra - first) * rowBytes)
+  for (let y = 0; y < extra; y++) row.copy(out, y * rowBytes)
+  crop.copy(out, extra * rowBytes, first * rowBytes)
+  return sharp(out, { raw: { width, height: height + extra - first, channels: 4 } })
 }
 
 /** Цвет фона — медиана пикселей по краю картинки: у нейросети фон почти ровный, но с шумом сжатия. */
@@ -163,15 +216,17 @@ function keyOut(data: Buffer, width: number, height: number, bg: [number, number
   }
 }
 
+/** Пурпурный и родня — малиновый, розовый: нейросеть не всегда попадает в чистый пурпур. Главное — зелёного мало. */
 function isMagenta([r, g, b]: [number, number, number]): boolean {
-  return r - g > 80 && b - g > 80
+  return r - g > 80 && b - g > 40
 }
 
 /**
- * Убирает розовый отсвет пурпурного фона у краёв: пиксель не может быть «пурпурнее», чем позволяет его зелёный канал.
- * Только у краёв — внутри рыбы розовое бывает настоящим (рот, жабры). Для зелёного фона так нельзя: у фидера зелёная сама удочка.
+ * Убирает розовый отсвет пурпурного фона: пиксель не может быть «пурпурнее», чем позволяет его зелёный канал.
+ * Только в полосе band от прозрачного края — внутри рыбы розовое бывает настоящим (рот, жабры); у мебели — везде.
+ * Для зелёного фона так нельзя: у фидера зелёная сама удочка.
  */
-function despillMagenta(data: Buffer, width: number, height: number) {
+function despillMagenta(data: Buffer, width: number, height: number, band: number) {
   // Расстояние до прозрачного — волной от прозрачных пикселей на SPILL_BAND шагов
   const dist = new Uint8Array(width * height).fill(255)
   let front: number[] = []
@@ -181,7 +236,7 @@ function despillMagenta(data: Buffer, width: number, height: number) {
       front.push(p)
     }
   }
-  for (let step = 1; step <= SPILL_BAND && front.length; step++) {
+  for (let step = 1; step <= Math.min(band, 254) && front.length; step++) {
     const next: number[] = []
     for (const p of front) {
       const x = p % width
@@ -194,7 +249,7 @@ function despillMagenta(data: Buffer, width: number, height: number) {
     front = next
   }
   for (let p = 0; p < width * height; p++) {
-    if (dist[p] > SPILL_BAND) continue
+    if (dist[p] > band) continue
     const i = p * 4
     const g = data[i + 1]
     const excess = Math.min(data[i], data[i + 2]) - g

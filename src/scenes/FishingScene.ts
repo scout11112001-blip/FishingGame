@@ -12,6 +12,7 @@ import { DEBUG } from '../debug.ts'
 import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
+import { CabinPanel } from '../ui/CabinPanel.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { DailyPanel } from '../ui/DailyPanel.ts'
 import { Hud } from '../ui/Hud.ts'
@@ -50,7 +51,10 @@ const COLOR = {
   white: 0xffffff,
 }
 
-type Result = { kind: 'caught'; fish: HookedFish; price: number; opened: readonly WaterBody[] } | { kind: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
+/** Итог заброса. trophy — рыба побила рекорд вида и висит теперь на стене хижины. */
+type Result =
+  | { kind: 'caught'; fish: HookedFish; price: number; trophy: boolean; opened: readonly WaterBody[] }
+  | { kind: 'escaped'; reason: EscapeReason; fish: HookedFish | null }
 
 export class FishingScene extends Phaser.Scene {
   private session!: FishingSession
@@ -93,6 +97,8 @@ export class FishingScene extends Phaser.Scene {
   /** Когда последний раз проверяли награду за вход (Date.now()): день может смениться прямо в игре. */
   private dailyCheckedAt = 0
   private achievementPanel!: AchievementPanel
+  /** Хижина — если она есть в пакете. */
+  private cabinPanel: CabinPanel | null = null
   private achievementButton!: HTMLButtonElement
   /** Кнопки меню по шагам обучения, которые их подсвечивают. */
   private tutorialOverlay!: TutorialOverlay
@@ -212,6 +218,13 @@ export class FishingScene extends Phaser.Scene {
     this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
     this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
     this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
+    // Хижина — слева от достижений: кубок остаётся в углу, зеркально кнопке звука
+    const cabin = this.pack.cabin
+    if (cabin) {
+      const panel = new CabinPanel(this.pack, cabin, this.player)
+      this.cabinPanel = panel
+      this.hud.addTopButton('🏠', this.texts.cabin.button, () => panel.open())
+    }
     this.achievementPanel = new AchievementPanel(this.pack, this.player.achievements)
     this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
@@ -228,6 +241,7 @@ export class FishingScene extends Phaser.Scene {
       this.baitPanel.destroy()
       this.dailyPanel.destroy()
       this.achievementPanel.destroy()
+      this.cabinPanel?.destroy()
       this.tutorialOverlay.destroy()
       this.soundButton.destroy()
     })
@@ -323,7 +337,8 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private get panelOpen(): boolean {
-    return this.tacklePanel.isOpen || this.waterPanel.isOpen || this.baitPanel.isOpen || this.achievementPanel.isOpen || this.dailyPanel.isOpen
+    const panels = [this.tacklePanel, this.waterPanel, this.baitPanel, this.achievementPanel, this.dailyPanel, this.cabinPanel]
+    return panels.some((p) => p?.isOpen)
   }
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
@@ -355,8 +370,8 @@ export class FishingScene extends Phaser.Scene {
     const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.player.shop.silver)}`)
     const xpText = this.xpText.setFontSize(size).setText(`${this.texts.xp}: ${xp}`)
     const xpX = x + silver.width + size * 1.2
-    // Правее — кнопка достижений: на узком телефоне опыт уходит строкой ниже
-    const room = this.view.w - 80
+    // Правее — кнопки хижины и достижений: на узком телефоне опыт уходит строкой ниже
+    const room = this.view.w - this.hud.topWidth - 26
     const wrap = xpX + xpText.width > room
     xpText.setPosition(wrap ? x0 : xpX, wrap ? y0 + label.height : y0)
     const linesBottom = y0 + label.height * (wrap ? 2 : 1)
@@ -527,13 +542,17 @@ export class FishingScene extends Phaser.Scene {
       case 'nibble':
         this.nibbleAge = 0
         break
-      case 'caught':
+      case 'caught': {
         this.playSound(CATCH_KEY, CATCH_VOLUME)
         this.player.shop.earn(e.price)
         this.player.xp += XP_PER_FISH
-        this.player.achievements.onCatch(e.fish, this.player.xp)
-        this.result = { kind: 'caught', fish: e.fish, price: e.price, opened: SANDBOX ? [] : newlyOpened(this.pack, this.player.xp - XP_PER_FISH, this.player.xp) }
+        // Рекорд вида — новый трофей хижины: проверяем до того, как рыба его обновит. Дата — по времени площадки
+        const trophy = !!this.pack.cabin && this.player.achievements.isTrophy(e.fish)
+        this.player.achievements.onCatch(e.fish, this.player.xp, this.platform.now())
+        const opened = SANDBOX ? [] : newlyOpened(this.pack, this.player.xp - XP_PER_FISH, this.player.xp)
+        this.result = { kind: 'caught', fish: e.fish, price: e.price, trophy, opened }
         break
+      }
       case 'escaped':
         this.result = { kind: 'escaped', reason: e.reason, fish: e.fish }
         break
@@ -1003,7 +1022,10 @@ function effortColor(f: FightView): number {
 }
 
 function resultMessage(r: Result, texts: PackTexts): string {
-  if (r.kind === 'caught') return [texts.caught(r.fish, r.price), ...r.opened.map((w) => texts.waters.opened(w.name))].join('\n')
+  if (r.kind === 'caught') {
+    const trophy = r.trophy ? [texts.cabin.newTrophy] : []
+    return [texts.caught(r.fish, r.price), ...trophy, ...r.opened.map((w) => texts.waters.opened(w.name))].join('\n')
+  }
   // Сорвавшуюся рыбу показываем, только если она успела клюнуть — это стимул закинуть снова
   const lost = r.fish && r.reason !== 'tooEarly' ? '\n' + texts.lost(r.fish) : ''
   return texts.escape[r.reason] + lost

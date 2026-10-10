@@ -3,9 +3,9 @@ import { BAIT_DURATION_MS, isBaitActive, type ActiveBait } from './bait.ts'
 import { claimDaily, dailyOffer, emptyDaily, type DailyReward, type DailyState } from './daily.ts'
 import { isWaterOpen } from './progress.ts'
 import { itemsOf, Shop, type Slot } from './shop.ts'
-import type { Bait, ContentPack, Line, Loadout, Reel, Rod, WaterBody } from './types.ts'
+import type { Bait, ContentPack, Furniture, Line, Loadout, Reel, Rod, WaterBody } from './types.ts'
 
-// Прогресс игрока — всё, что переживает перезагрузку: серебро, снасти, опыт, водоём, прикормка, достижения, обучение.
+// Прогресс игрока — всё, что переживает перезагрузку: серебро, снасти, опыт, водоём, прикормка, достижения, хижина, обучение.
 // Здесь же формат сохранения и проверка при загрузке. Ничего не знает ни о графике, ни о том, где лежит сохранение.
 
 /** Версия формата. Меняется, когда старое сохранение нельзя прочитать как есть, — тогда добавляем перевод из старой. */
@@ -25,6 +25,8 @@ export interface SaveData {
   /** Запас прикормок: id → штук. */
   baitStock: Record<string, number>
   daily: DailyState
+  /** Купленная мебель хижины — id. */
+  furniture: string[]
   stats: Omit<PlayerStats, 'xp'>
   achievements: { done: string[]; unseen: string[] }
   tutorialDone: boolean
@@ -47,6 +49,8 @@ export class PlayerState {
   /** Запас прикормок по id. */
   baitStock: Record<string, number> = {}
   daily: DailyState = emptyDaily()
+  /** Купленная мебель хижины по id. */
+  readonly furniture = new Set<string>()
   tutorialDone = false
   muted = false
   private readonly pack: ContentPack
@@ -92,6 +96,25 @@ export class PlayerState {
     return true
   }
 
+  /** Стоит ли предмет в хижине. В тестовой версии — вся мебель. */
+  ownsFurniture(item: Furniture): boolean {
+    return this.unlockAll || this.furniture.has(item.id)
+  }
+
+  /** На чём стоит предмет, если этого ещё нет (самовар без стола); null — ставить есть куда. */
+  missingBase(item: Furniture): Furniture | null {
+    const base = item.on ? this.pack.cabin?.furniture.find((f) => f.id === item.on) : undefined
+    return base && !this.ownsFurniture(base) ? base : null
+  }
+
+  /** Купить мебель: есть куда поставить и хватает серебра. Уже купленная — true без списания. */
+  buyFurniture(item: Furniture): boolean {
+    if (this.ownsFurniture(item)) return true
+    if (this.missingBase(item) || !this.shop.spend(item.price)) return false
+    this.furniture.add(item.id)
+    return true
+  }
+
   /** Какую награду за вход можно забрать сегодня (номер дня серии с 0), или null — уже забрана. */
   dailyOffer(today: string): number | null {
     return this.pack.daily.length ? dailyOffer(this.daily, today, this.pack.daily.length) : null
@@ -110,7 +133,7 @@ export class PlayerState {
 
   /** Снимок для сохранения — без времени записи: его ставит тот, кто пишет. */
   toSave(): Omit<SaveData, 'savedAt'> {
-    const { catches, bySpecies, best } = this.achievements.stats
+    const { catches, bySpecies, best, bestAt } = this.achievements.stats
     return {
       v: SAVE_VERSION,
       silver: this.shop.silver,
@@ -121,7 +144,8 @@ export class PlayerState {
       bait: this.bait ? { id: this.bait.bait.id, until: this.bait.until } : null,
       baitStock: { ...this.baitStock },
       daily: { ...this.daily },
-      stats: { catches, bySpecies: { ...bySpecies }, best: { ...best } },
+      furniture: [...this.furniture],
+      stats: { catches, bySpecies: { ...bySpecies }, best: { ...best }, bestAt: { ...bestAt } },
       achievements: this.achievements.ids(),
       tutorialDone: this.tutorialDone,
       muted: this.muted,
@@ -159,13 +183,15 @@ export class PlayerState {
       if (n > 0) this.baitStock[b.id] = n
     }
     this.daily = { lastDay: /^\d{4}-\d{2}-\d{2}$/.test(data.daily.lastDay ?? '') ? data.daily.lastDay : null, streak: count(data.daily.streak) }
+    this.furniture.clear()
+    for (const id of data.furniture) if (pack.cabin?.furniture.some((f) => f.id === id)) this.furniture.add(id)
 
-    const stats: PlayerStats = {
-      catches: count(data.stats.catches),
-      bySpecies: numbers(data.stats.bySpecies, pack, count),
-      best: numbers(data.stats.best, pack, (x) => (Number.isFinite(x) && x > 0 ? x : 0)),
-      xp: this.xp,
-    }
+    const positive = (x: number) => (Number.isFinite(x) && x > 0 ? x : 0)
+    const best = numbers(data.stats.best, pack, positive)
+    // Дата — только у рекорда, который есть
+    const bestAt = numbers(data.stats.bestAt, pack, positive)
+    for (const id of Object.keys(bestAt)) if (!best[id]) delete bestAt[id]
+    const stats: PlayerStats = { catches: count(data.stats.catches), bySpecies: numbers(data.stats.bySpecies, pack, count), best, bestAt, xp: this.xp }
     this.achievements.restore(stats, data.achievements.done, data.achievements.unseen)
     this.tutorialDone = data.tutorialDone === true
     this.muted = data.muted === true
@@ -204,10 +230,12 @@ export function parseSave(json: string): SaveData | null {
     // Поля, которых не было в первых сохранениях, — по умолчанию: формат от этого не меняется
     baitStock: isObject(r.baitStock) ? (r.baitStock as Record<string, number>) : {},
     daily: { lastDay: typeof daily.lastDay === 'string' ? daily.lastDay : null, streak: num(daily.streak) },
+    furniture: strings(r.furniture),
     stats: {
       catches: num(stats.catches),
       bySpecies: isObject(stats.bySpecies) ? (stats.bySpecies as Record<string, number>) : empty.bySpecies,
       best: isObject(stats.best) ? (stats.best as Record<string, number>) : empty.best,
+      bestAt: isObject(stats.bestAt) ? (stats.bestAt as Record<string, number>) : empty.bestAt,
     },
     achievements: { done: strings(achievements.done), unseen: strings(achievements.unseen) },
     tutorialDone: r.tutorialDone === true,
