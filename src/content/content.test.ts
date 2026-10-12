@@ -65,6 +65,55 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, p
     if (pack.art) for (const fish of pack.fish) expect(pack.art.fish[fish.id], fish.name).toBeDefined()
   })
 
+  it('хижина: картинки на месте, мебель внутри комнаты, подставка — раньше того, что на ней стоит', () => {
+    const cabin = pack.cabin
+    if (!cabin) return
+    expect(existsSync(`public/${cabin.interior}`), cabin.interior).toBe(true)
+    const ids = cabin.furniture.map((f) => f.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    cabin.furniture.forEach((f, i) => {
+      for (const file of [f.sprite, ...(f.icon ? [f.icon] : [])]) expect(existsSync(`public/${file}`), file).toBe(true)
+      expect(f.price, f.name).toBeGreaterThan(0)
+      const { x, bottom, width } = f.place
+      expect(x - width / 2, `${f.name}: левый край`).toBeGreaterThanOrEqual(0)
+      expect(x + width / 2, `${f.name}: правый край`).toBeLessThanOrEqual(1)
+      expect(bottom > 0 && bottom <= 1, `${f.name}: низ ${bottom}`).toBe(true)
+      if (f.on) expect(ids.indexOf(f.on), `${f.name} стоит на ${f.on}`).toBeGreaterThanOrEqual(0)
+      if (f.on) expect(ids.indexOf(f.on), `${f.name}: подставка раньше в списке`).toBeLessThan(i)
+    })
+  })
+
+  it('награды за вход и прикормки — из этого же пакета', () => {
+    for (const reward of pack.daily) {
+      expect(reward.silver).toBeGreaterThan(0)
+      if (reward.bait) expect(pack.baits).toContain(reward.bait)
+    }
+    for (const bait of pack.baits) expect(pack.fish).toContain(bait.species)
+    for (const bait of pack.baits) expect(pack.waters.some((w) => w.zones.some((z) => z.spawns.some((s) => s.species === bait.species))), bait.name).toBe(true)
+  })
+
+  it('у каждого места ловли есть рыба с ненулевым шансом', () => {
+    for (const water of pack.waters) {
+      for (const zone of water.zones) {
+        expect(zone.spawns.length, `${water.name}: ${zone.name}`).toBeGreaterThan(0)
+        for (const s of zone.spawns) expect(s.rarity, `${water.name}: ${zone.name}: ${s.species.name}`).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  it('тексты: подсказка на каждую фазу и причина на каждый сход', () => {
+    const t = pack.texts
+    for (const [phase, hint] of Object.entries(t.hints)) if (phase !== 'casting') expect(hint, phase).not.toBe('')
+    for (const [reason, text] of Object.entries(t.escape)) expect(text, reason).not.toBe('')
+  })
+
+  it('на экране улова числа по-русски: вес с запятой, тысячи через пробел', () => {
+    const fish = { species: pack.fish[0], weightKg: 0.31, power: 0.1 }
+    expect(pack.texts.caught(fish, 1200)).toMatch(/0,31 кг/)
+    expect(pack.texts.caught(fish, 1200).replace(/\s/g, ' ')).toMatch(/\+1 200 /)
+    expect(pack.texts.lost(fish)).toMatch(/0,31 кг/)
+  })
+
   it('дальний заброс ничего не отнимает и добавляет новую рыбу', () => {
     for (const water of pack.waters) {
       for (let i = 1; i < water.zones.length; i++) {

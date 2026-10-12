@@ -44,7 +44,7 @@ export class BaitPanel {
 
   private render() {
     const t = this.pack.texts.bait
-    const now = Date.now()
+    const now = this.platform.now()
     const active = this.player.bait
     this.list.replaceChildren()
     for (const bait of this.pack.baits) {
@@ -85,7 +85,7 @@ export class BaitPanel {
   }
 
   private activate(bait: Bait) {
-    if (!this.player.useBait(bait, Date.now())) return
+    if (!this.player.useBait(bait, this.platform.now())) return
     this.onActivate()
     this.render()
   }

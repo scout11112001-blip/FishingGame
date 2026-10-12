@@ -22,7 +22,8 @@ const player = new PlayerState(ACTIVE_PACK, { unlockAll: SANDBOX })
 // Прогресс грузится до запуска сцены: игра сразу стартует с ним
 await loadInto(player, store, platform.now())
 
-const saver = new AutoSaver(store, player)
+// Время записи — по часам площадки: у копий с разных устройств они общие, у самих устройств — нет
+const saver = new AutoSaver(store, player, () => platform.now())
 saver.start()
 // Свернули или закрыли — пишем сразу, не дожидаясь проверки по таймеру
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && saver.flush(true))

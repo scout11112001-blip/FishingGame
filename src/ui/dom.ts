@@ -8,7 +8,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''
 export function button(className: string, text: string, onClick: () => void): HTMLButtonElement {
   const b = el('button', className, text)
   b.type = 'button'
-  b.addEventListener('click', onClick)
+  b.addEventListener('click', (e) => {
+    // Нажатая мышью или пальцем кнопка не держит фокус: иначе пробел, которым на ПК забрасывают и тянут,
+    // «нажимал» бы её снова — переключал звук, открывал меню поверх заброса. С клавиатуры (detail = 0) фокус остаётся
+    if (e.detail > 0) b.blur()
+    onClick()
+  })
   return b
 }
 

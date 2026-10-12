@@ -17,10 +17,13 @@ export class AutoSaver {
   private lastFull: string | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private disabled = false
+  /** Часы для времени записи: на Яндексе серверные — по ним сравниваются копии с разных устройств. */
+  private readonly clock: () => number
 
-  constructor(store: SaveStore, player: PlayerState) {
+  constructor(store: SaveStore, player: PlayerState, clock: () => number = Date.now) {
     this.store = store
     this.player = player
+    this.clock = clock
     // Только что загруженное записывать незачем
     this.last = this.snapshot()
   }
@@ -49,7 +52,7 @@ export class AutoSaver {
     const json = this.snapshot()
     if (json !== this.last) {
       this.last = json
-      this.lastFull = JSON.stringify({ ...this.player.toSave(), savedAt: Date.now() })
+      this.lastFull = JSON.stringify({ ...this.player.toSave(), savedAt: this.clock() })
     } else if (!urgent || !this.lastFull) return
     void this.store.save(this.lastFull, urgent)
   }

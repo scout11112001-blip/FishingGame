@@ -71,3 +71,39 @@ describe('прикормка', () => {
     expect(RIVERS.baits.map((b) => b.species)).toEqual([BREAM, ZANDER, CATFISH])
   })
 })
+
+describe('прикормка на любую рыбу любого водоёма', () => {
+  it('шансы места в сумме 100%, без отрицательных и NaN; шанс рыбы не падает', () => {
+    for (const water of RIVERS.waters) {
+      for (const species of RIVERS.fish) {
+        const baited = baitedZones(water, species)
+        expect(baited).toHaveLength(water.zones.length)
+        baited.forEach((zone, i) => {
+          const where = `${water.name} / ${water.zones[i].name} / ${species.name}`
+          for (const s of zone) expect(Number.isFinite(s.rarity) && s.rarity >= 0, `${where}: ${s.species.name} = ${s.rarity}`).toBe(true)
+          // Без прикормки веса — относительные, под прикормкой — проценты
+          if (baitWorks(water, species)) {
+            expect(total(zone), where).toBeCloseTo(100)
+            expect(chanceOf(zone, species), where).toBeGreaterThanOrEqual(chanceOf(water.zones[i].spawns, species) - 1e-9)
+            // Новых видов, кроме прикормленного, не появляется
+            for (const s of zone) expect(s.species === species || water.zones[i].spawns.some((o) => o.species === s.species), where).toBe(true)
+          } else expect(zone).toEqual(zoneSpawns(water)[i])
+        })
+      }
+    }
+  })
+
+  it('рыба, которой больше половины на месте, под прикормкой занимает его целиком — и игра это переживает', () => {
+    const solo = { ...RIVERS.waters[0], zones: [{ ...RIVERS.waters[0].zones[0], spawns: [{ species: BREAM, rarity: 3 }, { species: CATFISH, rarity: 1 }] }] }
+    const [zone] = baitedZones(solo, BREAM)
+    expect(chanceOf(zone, BREAM)).toBeCloseTo(1)
+    expect(chanceOf(zone, CATFISH)).toBe(0)
+  })
+
+  it('прикормка кончается ровно в свой срок', () => {
+    const active = { bait: RIVERS.baits[0], until: 1000 }
+    expect(isBaitActive(active, 999)).toBe(true)
+    expect(isBaitActive(active, 1000)).toBe(false)
+    expect(zonesFor(POND, active, 1000)).toEqual(zoneSpawns(POND))
+  })
+})

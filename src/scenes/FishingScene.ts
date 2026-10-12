@@ -36,6 +36,8 @@ const CAST_SPAN = 0.9
 const NOTICE_SECONDS = 2.5
 /** Из скольких точек состоит изгибающаяся удочка-картинка. */
 const ROD_POINTS = 24
+/** Мельче этого счётчики в углу не становятся, как бы ни росла сумма: дальше уже не прочитать. */
+const WALLET_MIN_FONT = 8
 
 const COLOR = {
   rod: 0x6b4423,
@@ -100,7 +102,6 @@ export class FishingScene extends Phaser.Scene {
   /** Хижина — если она есть в пакете. */
   private cabinPanel: CabinPanel | null = null
   private achievementButton!: HTMLButtonElement
-  /** Кнопки меню по шагам обучения, которые их подсвечивают. */
   private tutorialOverlay!: TutorialOverlay
   private soundButton!: SoundButton
 
@@ -123,6 +124,11 @@ export class FishingScene extends Phaser.Scene {
   /** Ненавязчивое предупреждение: над поплавком (at = null) или там, куда нажали. Само гаснет. */
   private notice: { text: string; age: number; at: Point | null } | null = null
   private result: Result | null = null
+  /**
+   * Шрифт счётчиков, подобранный так, чтобы они влезли левее верхних кнопок. Подбор — несколько перерисовок
+   * текста, поэтому повторяем его, только когда меняется то, от чего он зависит (key): сумма, опыт, экран.
+   */
+  private walletFit: { key: string; size: number } | null = null
 
   constructor(player: PlayerState, platform: Platform) {
     super('FishingScene')
@@ -152,7 +158,7 @@ export class FishingScene extends Phaser.Scene {
 
   create() {
     this.session = new FishingSession({
-      zones: zonesFor(this.player.water, this.player.bait, Date.now()),
+      zones: zonesFor(this.player.water, this.player.bait, this.platform.now()),
       tackle: tackleOf(this.player.loadout, this.player.water),
       tuning: this.tuning,
       // В обучении клюёт самая частая рыба места, покрупнее средней: бой подольше, рывок заметен
@@ -285,7 +291,7 @@ export class FishingScene extends Phaser.Scene {
     if (this.notice) this.notice.age += dt
     this.steerWithKeys(dt)
     // Прикормка кончилась — рыба возвращается на свои места. Начатый заброс доловим с прикормкой
-    if (this.player.bait && !isBaitActive(this.player.bait, Date.now())) {
+    if (this.player.bait && !isBaitActive(this.player.bait, this.platform.now())) {
       this.player.bait = null
       this.equipPending = true
     }
@@ -343,46 +349,67 @@ export class FishingScene extends Phaser.Scene {
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
   private equip() {
-    this.equipPending = !this.session.equip(zonesFor(this.player.water, this.player.bait, Date.now()), tackleOf(this.player.loadout, this.player.water))
+    const zones = zonesFor(this.player.water, this.player.bait, this.platform.now())
+    this.equipPending = !this.session.equip(zones, tackleOf(this.player.loadout, this.player.water))
   }
 
   /**
    * Счётчики в левом верхнем углу: «Серебро», значок монеты сразу за словом, дальше сумма и опыт.
-   * Под ними — сколько ещё действует прикормка.
+   * Под ними — сколько ещё действует прикормка. Серебро и опыт — левее кнопок хижины и достижений:
+   * на узком телефоне опыт уходит строкой ниже, а не влезает и так — шрифт мельчает ровно настолько,
+   * чтобы влезть (но не мельче WALLET_MIN_FONT). Сумма уменьшилась — шрифт снова растёт. Возвращает низ блока.
    */
-  private drawWallet(size: number) {
+  private drawWallet(baseSize: number): number {
     const x0 = this.soundButton.right + 10
     const y0 = 10
-    const label = this.walletLabel.setFontSize(size).setPosition(x0, y0).setText(this.texts.wallet)
-    let x = x0 + label.width
-    const icon = this.silverIcon
-    icon.setVisible(this.textures.exists(SILVER_KEY))
-    if (icon.visible) {
-      // Монета — по высоте строки, без учёта обводки текста
-      const h = size * 1.05
-      icon.setScale(h / icon.height).setPosition(x, y0 + label.height / 2)
-      x += h
-    }
+    const buttons = this.hud.topRect
+    const room = buttons ? buttons.left - 8 : this.view.w - 16
     // Опыт — с порогом ближайшего закрытого водоёма: видно, сколько осталось
     // В тестовой версии водоёмы открыты с начала — порога нет
     const next = SANDBOX ? undefined : nextLockedWater(this.pack, this.player.xp)
-    const xp = next ? `${this.player.xp} / ${next.unlockXp}` : `${this.player.xp}`
-    const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(`: ${formatSilver(this.player.shop.silver)}`)
-    const xpText = this.xpText.setFontSize(size).setText(`${this.texts.xp}: ${xp}`)
-    const xpX = x + silver.width + size * 1.2
-    // Правее — кнопки хижины и достижений: на узком телефоне опыт уходит строкой ниже
-    const room = this.view.w - this.hud.topWidth - 26
-    const wrap = xpX + xpText.width > room
-    xpText.setPosition(wrap ? x0 : xpX, wrap ? y0 + label.height : y0)
-    const linesBottom = y0 + label.height * (wrap ? 2 : 1)
+    const xp = `${this.texts.xp}: ${next ? `${this.player.xp} / ${next.unlockXp}` : this.player.xp}`
+    const silverText = `: ${formatSilver(this.player.shop.silver)}`
+    const layout = (size: number) => {
+      const label = this.walletLabel.setFontSize(size).setPosition(x0, y0).setText(this.texts.wallet)
+      let x = x0 + label.width
+      const icon = this.silverIcon
+      icon.setVisible(this.textures.exists(SILVER_KEY))
+      if (icon.visible) {
+        // Монета — по высоте строки, без учёта обводки текста
+        const h = size * 1.05
+        icon.setScale(h / icon.height).setPosition(x, y0 + label.height / 2)
+        x += h
+      }
+      const silver = this.walletText.setFontSize(size).setPosition(x, y0).setText(silverText)
+      const xpText = this.xpText.setFontSize(size).setText(xp)
+      const xpX = x + silver.width + size * 1.2
+      const wrap = xpX + xpText.width > room
+      xpText.setPosition(wrap ? x0 : xpX, wrap ? y0 + label.height : y0)
+      const right = Math.max(silver.x + silver.width, xpText.x + xpText.width)
+      return { size, right, bottom: y0 + label.height * (wrap ? 2 : 1) }
+    }
+    const key = [baseSize, x0, room, silverText, xp].join('|')
+    if (this.walletFit?.key !== key) {
+      // Подгоняем по шагам: обводка текста от шрифта не зависит, а опыт может вернуться в первую строку
+      let fit = layout(baseSize)
+      for (let i = 0; i < 8 && fit.right > room && fit.size > WALLET_MIN_FONT; i++) {
+        const shrink = Math.min(0.97, (room - x0) / Math.max(1, fit.right - x0))
+        fit = layout(Math.max(WALLET_MIN_FONT, fit.size * shrink))
+      }
+      this.walletFit = { key, size: fit.size }
+    }
+    const lines = layout(this.walletFit.size)
 
-    const now = Date.now()
+    const now = this.platform.now()
     const bait = isBaitActive(this.player.bait, now) ? this.player.bait : null
     this.baitText.setVisible(!!bait)
-    if (bait) {
-      const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.player.water, bait.bait.species))
-      this.baitText.setFontSize(size).setPosition(x0, linesBottom).setText(status)
-    }
+    if (!bait) return lines.bottom
+    const status = this.texts.bait.status(bait.bait.name, formatDuration(bait.until - now), baitWorks(this.player.water, bait.bait.species))
+    // Длинная строка («здесь не действует») переносится по экрану; рядом с кнопками не помещается — встаёт под них
+    const text = this.baitText.setFontSize(lines.size).setWordWrapWidth(this.view.w - x0 - 12).setText(status)
+    const y = buttons && x0 + text.width > room ? Math.max(lines.bottom, buttons.bottom + 4) : lines.bottom
+    text.setPosition(x0, y)
+    return y + text.height
   }
 
   /**
@@ -452,7 +479,8 @@ export class FishingScene extends Phaser.Scene {
     if (this.panelOpen) return
     const phase = this.session.phase
     if (this.tutorial) {
-      if (this.tutorial.step?.tapToContinue) return this.tutorialTap()
+      // Пробел листает карточку так же, как тап по ней: с защитой от двойного нажатия
+      if (this.tutorial.step?.tapToContinue) return this.tutorialOverlay.tap()
       // Новичок не должен спугнуть первую рыбу, подсекая раньше времени
       if (phase === 'waiting') return
     }
@@ -658,16 +686,17 @@ export class FishingScene extends Phaser.Scene {
     this.drawRod(butt, tip, end, bend, w, h)
 
     // Интерфейс
-    this.drawWallet(fontSize * 0.8)
+    const walletBottom = this.drawWallet(fontSize * 0.8)
     // Кнопки меню — после обучения: пока оно идёт, ничто не уводит от первых уловов
     this.hud.setVisible(idle && !this.tutorial)
     this.hud.setAlert(this.achievementButton, this.player.achievements.hasUnseen)
-    this.statusText
+    const status = this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
-      // В небе, но не ниже верхней десятой экрана: на картинках дальний берег стоит ниже, чем у заливки
-      .setPosition(w / 2, Math.min(horizon * 0.55, h * 0.11))
       .setText(this.texts.hints[phase])
+    // В небе, но не ниже верхней десятой экрана: на картинках дальний берег стоит ниже, чем у заливки.
+    // И не выше нижнего края счётчиков: на узком экране они бывают в три строки
+    status.setPosition(w / 2, Math.max(Math.min(horizon * 0.55, h * 0.11), walletBottom + 4 + status.height / 2))
 
     // Ненавязчиво: мелко, над поплавком, и само гаснет
     const notice = this.notice
@@ -801,10 +830,6 @@ export class FishingScene extends Phaser.Scene {
     return levels - 1
   }
 
-  /**
-   * Вертикальная шкала усилия у левого края, прямо над полосой для пальца — рядом с ним, чтобы не переводить взгляд.
-   * Снизу вверх: серая зона — мало (рыба сойдёт), зелёная — нормально, красная — леска на пределе.
-   */
   /** Где шкала усилия: у левого края, над полосой для пальца. */
   private effortBarRect(w: number, h: number): Rect {
     const { top: stripTop } = this.rodStrip(w, h)
@@ -813,6 +838,10 @@ export class FishingScene extends Phaser.Scene {
     return { x: 12, y: stripTop - 10 - barH, w: barW, h: barH }
   }
 
+  /**
+   * Вертикальная шкала усилия у левого края, прямо над полосой для пальца — рядом с ним, чтобы не переводить взгляд.
+   * Снизу вверх: серая зона — мало (рыба сойдёт), зелёная — нормально, красная — леска на пределе.
+   */
   private drawEffortBar(fight: FightView, w: number, h: number, horizon: number, fontSize: number) {
     const g = this.uiGfx
     const { x, y, w: barW, h: barH } = this.effortBarRect(w, h)

@@ -4,7 +4,7 @@ import { button, el } from './dom.ts'
 export class Hud {
   private readonly bar: HTMLDivElement
   private readonly top: HTMLDivElement
-  private lastTopWidth = 0
+  private lastTopRect: DOMRect | null = null
 
   constructor() {
     this.bar = el('div', 'hud-bar')
@@ -38,11 +38,14 @@ export class Hud {
     if (alert && alert.hidden !== !on) alert.hidden = !on
   }
 
-  /** Ширина кнопок вверху справа, CSS-пиксели. Пока они спрятаны (бой, обучение) — последняя измеренная. */
-  get topWidth(): number {
-    const w = this.top.getBoundingClientRect().width
-    if (w) this.lastTopWidth = w
-    return this.lastTopWidth
+  /**
+   * Где кнопки вверху справа, CSS-пиксели. Пока они спрятаны (бой, обучение) — где были в последний раз,
+   * чтобы счётчики рядом не прыгали; ни разу не показывались — null.
+   */
+  get topRect(): DOMRect | null {
+    const r = this.top.getBoundingClientRect()
+    if (r.width) this.lastTopRect = r
+    return this.lastTopRect
   }
 
   setVisible(visible: boolean): void {

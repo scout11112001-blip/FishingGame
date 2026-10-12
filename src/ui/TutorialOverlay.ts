@@ -7,7 +7,7 @@ export interface Rect {
   h: number
 }
 
-/** Сколько миллисекунд карточку нельзя закрыть: чтобы тап, которым игрок только что подсекал, её не пролистнул. */
+/** Сколько миллисекунд карточку нельзя закрыть: чтобы тап (или пробел), которым игрок только что подсекал, её не пролистнул. */
 const TAP_GUARD_MS = 400
 const GAP = 14
 const MARGIN = 12
@@ -40,10 +40,13 @@ export class TutorialOverlay {
     this.hint = el('div', 'tut-hint')
     this.card.append(this.title, this.text, this.hint)
     this.root.append(this.hole, this.card)
-    this.root.addEventListener('click', () => {
-      if (this.tapToContinue && performance.now() - this.shownAt > TAP_GUARD_MS) this.onTap()
-    })
+    this.root.addEventListener('click', () => this.tap())
     document.body.append(this.root)
+  }
+
+  /** Нажатие по карточке — тапом или пробелом. Только что появившуюся не листает. */
+  tap(): void {
+    if (this.tapToContinue && performance.now() - this.shownAt > TAP_GUARD_MS) this.onTap()
   }
 
   /** Показать шаг. key — его имя: тексты и анимация появления обновляются, только когда шаг сменился. */
@@ -73,6 +76,7 @@ export class TutorialOverlay {
     this.hole.hidden = !rect
     const cardH = this.card.offsetHeight
     const cardW = this.card.offsetWidth
+    let left = (W - cardW) / 2
     let top: number
     if (rect) {
       // Вырез не выходит за экран: иначе рамка у полосы внизу обрезается краем
@@ -80,14 +84,21 @@ export class TutorialOverlay {
       const y = Math.max(rect.y, 2)
       rect = { x, y, w: Math.min(rect.x + rect.w, W - 2) - x, h: Math.min(rect.y + rect.h, H - 2) - y }
       setBox(this.hole, rect)
-      const above = rect.y
-      const below = H - rect.y - rect.h
-      top = below >= above ? rect.y + rect.h + GAP : rect.y - GAP - cardH
+      const above = rect.y - MARGIN
+      const below = H - rect.y - rect.h - MARGIN
+      const leftSide = rect.x - MARGIN
+      const rightSide = W - rect.x - rect.w - MARGIN
+      if (Math.max(above, below) < cardH + GAP && Math.max(leftSide, rightSide) >= cardW + GAP) {
+        // Низкий экран (телефон лёжа): ни над вырезом, ни под ним карточка не помещается — встаёт сбоку
+        left = rightSide >= leftSide ? rect.x + rect.w + GAP : rect.x - GAP - cardW
+        top = rect.y + rect.h / 2 - cardH / 2
+      } else top = below >= above ? rect.y + rect.h + GAP : rect.y - GAP - cardH
     } else {
       top = (H - cardH) / 2
     }
     top = Math.min(Math.max(top, MARGIN), H - cardH - MARGIN)
-    this.card.style.left = `${Math.max(MARGIN, (W - cardW) / 2)}px`
+    left = Math.min(Math.max(left, MARGIN), W - cardW - MARGIN)
+    this.card.style.left = `${left}px`
     this.card.style.top = `${top}px`
   }
 

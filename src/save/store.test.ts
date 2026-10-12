@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PlayerState } from '../content/player.ts'
 import { RIVERS } from '../content/rivers/index.ts'
 import { AutoSaver } from './autosave.ts'
-import { CLOUD_INTERVAL_MS, CloudStore, MemoryStore, MirrorStore, newer } from './store.ts'
+import { CLOUD_INTERVAL_MS, CloudStore, LocalStore, MemoryStore, MirrorStore, newer } from './store.ts'
 
 /** Данные игрока Яндекса в памяти: считаем записи и запоминаем, срочные ли они. */
 function fakePlayer() {
@@ -110,5 +110,105 @@ describe('сохранение в двух местах', () => {
     saver.flush(true)
     expect(store.writes).toBe(2)
     expect(store.urgentWrites).toBe(1)
+  })
+})
+
+describe('сбои хранилищ', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Облако, которое падает, пока fail = true. */
+  function flakyPlayer() {
+    const state = { fail: true, stored: {} as Record<string, unknown>, calls: 0 }
+    return {
+      state,
+      async getData() {
+        if (state.fail) throw new Error('нет связи')
+        return state.stored
+      },
+      async setData(data: Record<string, unknown>) {
+        state.calls++
+        if (state.fail) throw new Error('нет связи')
+        state.stored = data
+      },
+    }
+  }
+
+  it('облако не отвечает при загрузке — играем с копией из браузера', async () => {
+    const local = new MemoryStore()
+    local.data = save(5, 10)
+    const cloud = new CloudStore(flakyPlayer())
+    expect(await new MirrorStore(local, cloud).load()).toBe(save(5, 10))
+  })
+
+  it('запись в облако не прошла — уйдёт со следующей, свежее не затирается старым', async () => {
+    const player = flakyPlayer()
+    const cloud = new CloudStore(player)
+    await cloud.save(save(1))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(player.state.calls).toBe(1)
+    player.state.fail = false
+    await cloud.save(save(2))
+    await vi.advanceTimersByTimeAsync(CLOUD_INTERVAL_MS)
+    expect(player.state.stored.save).toBe(save(2))
+  })
+
+  it('запись в облако не прошла, а новых изменений нет — досылается при сворачивании', async () => {
+    const player = flakyPlayer()
+    const cloud = new CloudStore(player)
+    await cloud.save(save(1))
+    await vi.advanceTimersByTimeAsync(0)
+    player.state.fail = false
+    await cloud.save(save(1), true)
+    expect(player.state.stored.save).toBe(save(1))
+  })
+
+  it('браузер не даёт писать (переполнен, запрещён) — игра не падает', async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error('запрещено')
+      },
+      setItem: () => {
+        throw new Error('QuotaExceededError')
+      },
+      removeItem: () => {
+        throw new Error('запрещено')
+      },
+    } as unknown as Storage
+    const local = new LocalStore('k', () => broken)
+    await expect(local.save('x')).resolves.toBeUndefined()
+    await expect(local.load()).resolves.toBeNull()
+    await expect(local.clear()).resolves.toBeUndefined()
+    await expect(local.backup('x')).resolves.toBeUndefined()
+    // И без хранилища вовсе
+    const none = new LocalStore('k', () => {
+      throw new Error('нет localStorage')
+    })
+    await expect(none.load()).resolves.toBeNull()
+  })
+
+  it('время записи — по часам, которые дала площадка, а не по часам устройства', () => {
+    const store = new MemoryStore()
+    const player = new PlayerState(RIVERS)
+    const saver = new AutoSaver(store, player, () => 123_456)
+    player.shop.earn(1)
+    saver.flush()
+    expect(JSON.parse(store.data!).savedAt).toBe(123_456)
+  })
+
+  it('после сброса прогресса автосохранение не пишет даже при сворачивании', () => {
+    const store = new MemoryStore()
+    const player = new PlayerState(RIVERS)
+    const saver = new AutoSaver(store, player)
+    player.shop.earn(1)
+    saver.flush()
+    saver.disable()
+    player.shop.earn(1)
+    saver.flush(true)
+    expect(store.writes).toBe(1)
   })
 })

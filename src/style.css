@@ -263,6 +263,24 @@ body {
   }
 }
 
+/* Низкий экран (телефон лёжа): карточка компактнее, чтобы меньше закрывать подсвеченное */
+@media (max-height: 450px) {
+  .tut-card {
+    padding: 10px 14px;
+  }
+  .tut-title {
+    font-size: 18px;
+  }
+  .tut-text {
+    margin-top: 4px;
+    font-size: 14px;
+  }
+  .tut-hint {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+}
+
 /* Модальные панели (снасти, водоёмы): снизу на телефоне, по центру на широком экране */
 .sheet-backdrop {
   position: fixed;

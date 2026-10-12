@@ -14,7 +14,10 @@ export const SAVE_VERSION = 1
 /** Сохранение — только id и числа: по ним предметы ищутся в пакете заново, так переживается правка контента. */
 export interface SaveData {
   v: typeof SAVE_VERSION
-  /** Когда записано (Date.now()): из двух сохранений (в браузере и в облаке) берём более свежее. */
+  /**
+   * Когда записано — по времени площадки (на Яндексе серверное, одинаковое на всех устройствах):
+   * из двух сохранений (в браузере и в облаке) берём более свежее.
+   */
   savedAt: number
   silver: number
   xp: number
@@ -91,7 +94,11 @@ export class PlayerState {
    */
   useBait(bait: Bait, now: number): boolean {
     if (!this.canUseBait(bait, now)) return false
-    if (!this.unlockAll) this.baitStock[bait.id] -= 1
+    if (!this.unlockAll) {
+      this.baitStock[bait.id] -= 1
+      // Пустое из запаса убираем: так сохранение одинаково до и после перезагрузки
+      if (!this.baitStock[bait.id]) delete this.baitStock[bait.id]
+    }
     this.bait = { bait, until: now + BAIT_DURATION_MS }
     return true
   }
@@ -175,7 +182,8 @@ export class PlayerState {
     this.water = water && this.isOpen(water) ? water : pack.waters[0]
 
     const bait = data.bait && pack.baits.find((b) => b.id === data.bait!.id)
-    const active = bait ? { bait, until: Number(data.bait!.until) } : null
+    // Не дольше, чем длится прикормка: срок «из будущего» значит, что часы переводили, пока она действовала
+    const active = bait ? { bait, until: Math.min(Number(data.bait!.until), now + BAIT_DURATION_MS) } : null
     this.bait = isBaitActive(active, now) ? active : null
     this.baitStock = {}
     for (const b of pack.baits) {
@@ -185,6 +193,8 @@ export class PlayerState {
     this.daily = { lastDay: /^\d{4}-\d{2}-\d{2}$/.test(data.daily.lastDay ?? '') ? data.daily.lastDay : null, streak: count(data.daily.streak) }
     this.furniture.clear()
     for (const id of data.furniture) if (pack.cabin?.furniture.some((f) => f.id === id)) this.furniture.add(id)
+    // Стоящее на том, чего нет (самовар без стола), — убираем: висело бы в воздухе
+    for (const f of pack.cabin?.furniture ?? []) if (this.furniture.has(f.id) && this.missingBase(f)) this.furniture.delete(f.id)
 
     const positive = (x: number) => (Number.isFinite(x) && x > 0 ? x : 0)
     const best = numbers(data.stats.best, pack, positive)

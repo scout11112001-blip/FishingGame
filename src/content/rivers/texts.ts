@@ -1,5 +1,8 @@
 import type { PackTexts } from '../types.ts'
 
+/** Вес по-русски — с запятой: «0,31». */
+const kg = (weight: number) => weight.toLocaleString('ru-RU')
+
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 
 export const RIVERS_TEXTS: PackTexts = {
@@ -28,8 +31,8 @@ export const RIVERS_TEXTS: PackTexts = {
     wrongSide: 'ПАЛЕЦ — В РАМКУ!',
     rushSoon: 'Сейчас рванёт!',
   },
-  caught: (fish, price) => `Поймал!\n${fish.species.name}, ${fish.weightKg} кг\n+${price} серебра`,
-  lost: (fish) => `Сорвалась: ${fish.species.name}, ${fish.weightKg} кг`,
+  caught: (fish, price) => `Поймал!\n${fish.species.name}, ${kg(fish.weightKg)} кг\n+${price.toLocaleString('ru-RU')} серебра`,
+  lost: (fish) => `Сорвалась: ${fish.species.name}, ${kg(fish.weightKg)} кг`,
   cast: {
     locked: 'Нужна удочка дальнобойнее',
     tooFar: 'Дальше эта удочка не добросит',
