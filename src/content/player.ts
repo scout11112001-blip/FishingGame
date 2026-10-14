@@ -83,6 +83,14 @@ export class PlayerState {
     this.baitStock[bait.id] = (this.baitStock[bait.id] ?? 0) + count
   }
 
+  /** Купить одну прикормку в запас за серебро. Не хватает — false, ничего не списано. В тестовой версии запас и так бесконечный. */
+  buyBait(bait: Bait): boolean {
+    if (this.unlockAll) return true
+    if (!this.shop.spend(bait.price)) return false
+    this.addBait(bait)
+    return true
+  }
+
   /** Можно ли сейчас включить прикормку: есть в запасе и никакая другая (или эта же) ещё не действует. */
   canUseBait(bait: Bait, now: number): boolean {
     return this.baitCount(bait) >= 1 && !isBaitActive(this.bait, now)

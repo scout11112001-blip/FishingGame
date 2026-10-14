@@ -531,29 +531,51 @@ body {
   font-weight: 600;
 }
 
-/* Прикормки нет в запасе: карточка приглушена, а кнопка «Получить сейчас» — яркая */
-.sheet-card.empty > :not(.sheet-ad) {
+/* Прикормки нет в запасе: карточка приглушена, а кнопки «Купить» и «Получить сейчас» — яркие */
+.sheet-card.empty > :not(.sheet-actions) {
   opacity: 0.6;
 }
 
-.sheet-card.empty {
+/* Карточка прикормки сама не нажимается — в ней свои кнопки */
+.sheet-card.bait-card {
   cursor: default;
 }
 
-.sheet-ad {
-  display: block;
-  width: 100%;
-  min-height: 44px;
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 10px;
+}
+
+.sheet-act {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 12px;
   border: none;
   border-radius: 10px;
-  background: var(--ui-stat);
-  color: #10364a;
-  font: 700 16px var(--ui-font);
+  color: var(--ui-text);
+  font: 700 15px var(--ui-font);
   cursor: pointer;
 }
 
-.sheet-ad:disabled {
+.sheet-act.use {
+  background: var(--ui-ok);
+}
+
+.sheet-act.buy {
+  background: var(--ui-accent);
+}
+
+/* Реклама — своей строкой на всю ширину */
+.sheet-ad {
+  flex-basis: 100%;
+  background: var(--ui-stat);
+  color: #10364a;
+  font-size: 16px;
+}
+
+.sheet-act:disabled {
   background: rgba(255, 255, 255, 0.15);
   color: var(--ui-muted);
   cursor: default;

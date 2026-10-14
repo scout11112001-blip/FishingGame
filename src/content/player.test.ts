@@ -201,9 +201,41 @@ describe('награда за вход и запас прикормок', () => 
     expect(p.bait?.bait).toBe(zander)
   })
 
-  it('в тестовой версии прикормок сколько угодно', () => {
+  it('прикормка покупается за серебро в запас; не хватает — ничего не списано', () => {
+    const p = new PlayerState(RIVERS)
+    const zander = RIVERS.baits[1]
+    p.shop.earn(zander.price - 1)
+    expect(p.buyBait(zander)).toBe(false)
+    expect(p.shop.silver).toBe(zander.price - 1)
+    expect(p.baitCount(zander)).toBe(0)
+
+    p.shop.earn(zander.price + 1)
+    expect(p.buyBait(zander)).toBe(true)
+    expect(p.buyBait(zander)).toBe(true)
+    expect(p.shop.silver).toBe(0)
+    expect(p.baitCount(zander)).toBe(2)
+    // Купленная — такая же, как из награды: включается из запаса, а пока действует, покупать можно дальше
+    expect(p.useBait(zander, NOW)).toBe(true)
+    expect(p.baitCount(zander)).toBe(1)
+  })
+
+  it('купленный запас переживает перезагрузку', () => {
+    const p = new PlayerState(RIVERS)
+    const catfish = RIVERS.baits[2]
+    p.shop.earn(catfish.price)
+    p.buyBait(catfish)
+    const after = new PlayerState(RIVERS)
+    after.restore({ ...p.toSave(), savedAt: NOW }, NOW)
+    expect(after.baitCount(catfish)).toBe(1)
+    expect(after.shop.silver).toBe(0)
+  })
+
+  it('в тестовой версии прикормок сколько угодно — и покупка ничего не списывает', () => {
     const p = new PlayerState(RIVERS, { unlockAll: true })
     for (let i = 0; i < 3; i++) expect(p.useBait(RIVERS.baits[2], NOW + i * BAIT_DURATION_MS)).toBe(true)
+    p.shop.earn(100)
+    expect(p.buyBait(RIVERS.baits[2])).toBe(true)
+    expect(p.shop.silver).toBe(100)
   })
 })
 

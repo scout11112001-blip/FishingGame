@@ -89,6 +89,7 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, p
       if (reward.bait) expect(pack.baits).toContain(reward.bait)
     }
     for (const bait of pack.baits) expect(pack.fish).toContain(bait.species)
+    for (const bait of pack.baits) expect(Number.isInteger(bait.price) && bait.price > 0, `${bait.name}: цена ${bait.price}`).toBe(true)
     for (const bait of pack.baits) expect(pack.waters.some((w) => w.zones.some((z) => z.spawns.some((s) => s.species === bait.species))), bait.name).toBe(true)
   })
 
