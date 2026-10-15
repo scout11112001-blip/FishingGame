@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "build:sandbox": "tsc && vite build --mode sandbox --outDir dist-sandbox",
     "yandex": "vite build --mode debug --outDir dist-yandex && sdk-dev-proxy -p dist-yandex --dev-mode=true",
+    "dev:vk": "vite --mode vk --port 5175",
     "build:vk": "tsc && vite build --mode vk --outDir dist-vk",
     "deploy:vk": "npm run build:vk && vk-miniapps-deploy",
     "preview": "vite preview",

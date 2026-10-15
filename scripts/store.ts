@@ -6,6 +6,8 @@
 //   ВК сам делает из неё иконки 278 и 150 px, где надпись всё равно не прочитать. Кусок картинки маленький, поэтому
 //   его сначала увеличивает нейросеть Real-ESRGAN (как фоны в npm run art); без неё — просто растягиваем.
 // - Обложка сообщества ВК (оттуда же → store/vk/cover.jpg): 1920×768, тоже из увеличенной картинки.
+// - Фавикон ВК (рисованный поплавок → store/vk/favicon.png): 32×32.
+// Скриншоты для ВК (store/vk/screenshots, 600×1200) скриптом не делаются — их снимают в игре (npm run dev:vk).
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -23,6 +25,11 @@ const ICON = { out: 'store/vk/icon.jpg', size: 576, crop: { left: 800, top: 150,
  * Без текста: название сообщества ВК пишет под обложкой сам.
  */
 const COVER = { out: 'store/vk/cover.jpg', width: 1920, height: 768, crop: { top: 110, height: 550 } }
+/**
+ * Фавикон ВК (значок вкладки браузера): 32×32 PNG, до 50 КБ. Сом в таком размере — пятно, тонкий поплавок из игры —
+ * полоска; читается только простая фигура: круглый красно-белый поплавок на воде, на тёмно-синем скруглённом квадрате.
+ */
+const FAVICON = { out: 'store/vk/favicon.png', size: 32 }
 
 const UPSCALER = 'tools/realesrgan/realesrgan-ncnn-vulkan.exe'
 const UPSCALE = 4
@@ -79,3 +86,17 @@ try {
 } finally {
   rmSync(temp, { recursive: true, force: true })
 }
+
+// Рисуем в 8 раз крупнее и уменьшаем — так края сглаживаются. Координаты — в долях стороны 256
+const floatSvg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs><clipPath id="top"><rect width="256" height="132"/></clipPath></defs>
+  <rect width="256" height="256" rx="56" fill="#10364a"/>
+  <path d="M30 176 q24 -14 48 0 t48 0 t48 0 t48 0" fill="none" stroke="#5fb3d9" stroke-width="10" stroke-linecap="round"/>
+  <rect x="122" y="30" width="12" height="54" rx="6" fill="#f5f5f5"/>
+  <circle cx="128" cy="132" r="56" fill="#ffffff"/>
+  <circle cx="128" cy="132" r="56" fill="#e53935" clip-path="url(#top)"/>
+  <circle cx="128" cy="132" r="56" fill="none" stroke="#0b2a3a" stroke-width="8"/>
+</svg>`
+const favicon = await sharp(Buffer.from(floatSvg)).resize(FAVICON.size, FAVICON.size).png().toFile(FAVICON.out)
+console.log(`поплавок → ${FAVICON.out}: ${favicon.width}×${favicon.height}, ${(favicon.size / 1024).toFixed(1)} КБ`)
