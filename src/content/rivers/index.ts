@@ -227,7 +227,8 @@ const CABIN: CabinContent = {
 
 export const RIVERS: ContentPack = {
   id: 'rivers',
-  title: 'Рыбалка',
+  // Как в каталоге игр: до 29 символов. В меню часть после двоеточия — подзаголовком
+  title: 'Наша рыбалка: хижина у озера',
   fish: ALL_FISH,
   waters: [POND, RIVER, LAKE],
   rods: [BAMBOO, BOLOGNESE, FEEDER],

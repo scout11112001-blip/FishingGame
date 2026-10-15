@@ -231,13 +231,25 @@ body {
 
 .menu-title {
   margin: 0;
-  font-size: clamp(46px, 13vw, 76px);
+  font-size: clamp(38px, 10.5vw, 72px);
   font-weight: 900;
   line-height: 1;
   letter-spacing: 1px;
   text-shadow:
     0 3px 0 rgba(0, 0, 0, 0.25),
     0 6px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* «хижина у озера» — под названием, мельче и разреженнее */
+.menu-subtitle {
+  margin-top: 6px;
+  font-size: clamp(18px, 5vw, 26px);
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.25),
+    0 4px 18px rgba(0, 0, 0, 0.6);
 }
 
 .menu-tagline {
@@ -416,7 +428,11 @@ body {
     gap: 14px;
   }
   .menu-title {
-    font-size: 42px;
+    font-size: 40px;
+  }
+  .menu-subtitle {
+    margin-top: 2px;
+    font-size: 16px;
   }
   .menu-tagline {
     margin-top: 4px;

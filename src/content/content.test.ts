@@ -20,6 +20,13 @@ function bestLoadout(pack: ContentPack): Loadout {
 }
 
 describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('пакет %s', (_id, pack) => {
+  it('название годится для каталога ВК: 3–29 символов, только разрешённые знаки', () => {
+    expect(pack.title.length).toBeGreaterThanOrEqual(3)
+    expect(pack.title.length).toBeLessThanOrEqual(29)
+    // Буквы, цифры, пробелы, дефис, тире, двоеточие (эмодзи тоже можно, но у нас их нет)
+    expect(pack.title).toMatch(/^[\p{L}\p{N} :\-—–]+$/u)
+  })
+
   it('идентификаторы уникальны (по ним будут сохранения)', () => {
     for (const list of [pack.fish, pack.waters, pack.rods, pack.lines, pack.reels]) {
       const ids = list.map((x) => x.id)

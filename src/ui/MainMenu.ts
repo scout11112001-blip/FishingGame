@@ -9,6 +9,7 @@ export interface MenuItem {
 }
 
 export interface MenuContent {
+  /** Название игры. Часть после двоеточия («Наша рыбалка: хижина у озера») — подзаголовок строкой ниже, мельче. */
   title: string
   tagline: string
   play: string
@@ -45,7 +46,10 @@ export class MainMenu {
     const body = el('div', 'menu-body')
 
     const head = el('div', 'menu-head')
-    head.append(el('h1', 'menu-title', content.title), el('div', 'menu-tagline', content.tagline))
+    const [name, subtitle] = content.title.split(/:\s*/, 2)
+    head.append(el('h1', 'menu-title', name))
+    if (subtitle) head.append(el('div', 'menu-subtitle', subtitle))
+    head.append(el('div', 'menu-tagline', content.tagline))
     this.stats = el('div', 'menu-stats')
     head.append(this.stats)
 
