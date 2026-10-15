@@ -322,3 +322,123 @@ describe('FishingSession: вываживание', () => {
     expect(session.phase).toBe('fighting')
   })
 })
+
+describe('FishingSession: уход в меню посреди заброса (abort)', () => {
+  /** Довести сессию до фазы: на экране итога — с честным уловом или срывом. */
+  function reach(session: FishingSession, phase: Phase) {
+    if (phase === 'idle') return
+    session.press()
+    if (phase === 'casting') return
+    runUntil(session, () => session.phase === 'waiting')
+    if (phase === 'waiting') return
+    if (phase === 'escaped') {
+      // Подсёк раньше поклёвки — спугнул
+      session.press()
+      return
+    }
+    runUntil(session, () => session.phase === 'bite')
+    if (phase === 'bite') return
+    session.press()
+    if (phase === 'fighting') return
+    runUntil(session, () => session.phase === 'caught', 300, player(session, true))
+  }
+
+  const PHASES: Phase[] = ['casting', 'waiting', 'bite', 'fighting', 'caught', 'escaped']
+
+  it('в покое ничего не делает и ничего не сообщает', () => {
+    const { session, events } = makeSession([small])
+    expect(session.abort()).toBe(false)
+    expect(session.phase).toBe('idle')
+    expect(events).toEqual([])
+  })
+
+  it.each(PHASES)('из фазы %s — сразу в покой, единственное событие — фаза idle', (phase) => {
+    const { session, events } = makeSession([small])
+    reach(session, phase)
+    expect(session.phase).toBe(phase)
+    const before = events.length
+    expect(session.abort()).toBe(true)
+    expect(session.phase).toBe('idle')
+    expect(session.fight).toBeNull()
+    expect(session.hookWindowLeft).toBe(0)
+    expect(session.castProgress).toBe(0)
+    expect(events.slice(before)).toEqual<FishingEvent[]>([{ type: 'phase', phase: 'idle' }])
+  })
+
+  it.each(PHASES)('после ухода из фазы %s ничего не продолжается само — ни поклёвки, ни итога', (phase) => {
+    const { session, events } = makeSession([small])
+    reach(session, phase)
+    session.abort()
+    const before = events.length
+    for (let t = 0; t < 600; t += 0.05) session.update(0.05)
+    expect(session.phase).toBe('idle')
+    expect(events.length).toBe(before)
+  })
+
+  it.each(PHASES)('после ухода из фазы %s второй уход ничего не делает', (phase) => {
+    const { session, events } = makeSession([small])
+    reach(session, phase)
+    expect(session.abort()).toBe(true)
+    const before = events.length
+    expect(session.abort()).toBe(false)
+    expect(events.length).toBe(before)
+  })
+
+  it.each(PHASES)('после ухода из фазы %s снасть и настройки меняются, а следующий заброс ловит как обычно', (phase) => {
+    const { session, events } = makeSession([small])
+    reach(session, phase)
+    session.abort()
+    expect(session.equip([[{ species: small, rarity: 1 }]], { ...TACKLE, lineStrength: 2 })).toBe(true)
+    expect(session.setTuning(DEFAULT_TUNING)).toBe(true)
+    const caughtBefore = events.filter((e) => e.type === 'caught').length
+    reach(session, 'caught')
+    expect(session.phase).toBe('caught')
+    expect(events.filter((e) => e.type === 'caught').length).toBe(caughtBefore + 1)
+  })
+
+  it('с экрана улова — рыба засчитана ровно один раз, срыва нет', () => {
+    const { session, events } = makeSession([small])
+    reach(session, 'caught')
+    session.abort()
+    session.update(10)
+    expect(events.filter((e) => e.type === 'caught')).toHaveLength(1)
+    expect(events.filter((e) => e.type === 'escaped')).toHaveLength(0)
+  })
+
+  it.each(['casting', 'waiting', 'bite', 'fighting'] as Phase[])('ушёл из фазы %s — ни улова, ни срыва', (phase) => {
+    const { session, events } = makeSession([small])
+    reach(session, phase)
+    session.abort()
+    for (let t = 0; t < 120; t += DT) session.update(DT)
+    expect(events.some((e) => e.type === 'caught' || e.type === 'escaped')).toBe(false)
+  })
+
+  it('ушёл посреди полёта поплавка — поплавок не шлёпается в воду и не клюёт', () => {
+    const { session, events } = makeSession([small])
+    reach(session, 'casting')
+    session.update(DEFAULT_TUNING.castDuration / 2)
+    session.abort()
+    session.update(DEFAULT_TUNING.castDuration * 2)
+    const phases = events.flatMap((e) => (e.type === 'phase' ? [e.phase] : []))
+    expect(phases).toEqual<Phase[]>(['casting', 'idle'])
+    expect(events.some((e) => e.type === 'nibble')).toBe(false)
+  })
+
+  it('ушёл посреди боя и сразу забросил — рыба прошлого боя не возвращается', () => {
+    const session = new FishingSession({
+      zones: [[{ species: small, rarity: 1 }]],
+      tackle: TACKLE,
+      rng: seededRng(4),
+      pickFish: (() => {
+        let n = 0
+        return () => makeFish(n++ === 0 ? big : small, 1)
+      })(),
+    })
+    reach(session, 'fighting')
+    expect(session.fight!.fish.species).toBe(big)
+    session.abort()
+    reach(session, 'fighting')
+    expect(session.fight!.fish.species).toBe(small)
+    expect(session.fight!.distance).toBeCloseTo(session.cast, 5)
+  })
+})

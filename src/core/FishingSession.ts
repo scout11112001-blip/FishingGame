@@ -380,6 +380,20 @@ export class FishingSession {
     this.holding = false
   }
 
+  /**
+   * Бросить заброс в любой фазе и вернуться в покой — без итога: ни улова, ни срыва, ни событий о них, только фаза idle.
+   * Так игрок уходит в меню посреди заброса или боя: рыба просто теряется. С экрана итога — как его закрыть:
+   * пойманное уже засчитано событием caught и второй раз не засчитывается. В покое ничего не делает — false.
+   */
+  abort(): boolean {
+    if (this._phase === 'idle') return false
+    this.hooked = null
+    this.fightState = null
+    this.holding = false
+    this.setPhase('idle')
+    return true
+  }
+
   /** Куда отведён палец: -1 — левый край, 1 — правый. Работает в любой фазе, запоминается. */
   setRod(x: number): void {
     this.rodX = clamp(x, -1, 1)

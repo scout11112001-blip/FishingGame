@@ -139,11 +139,305 @@ body {
   }
 }
 
-/* Кнопка звука — в левом верхнем углу, зеркально кнопке достижений */
+/* Кнопка звука — в левом верхнем углу, зеркально кнопке меню. Поверх главного меню: звук выключают и там */
 .hud-corner {
   position: fixed;
+  z-index: 6;
   top: calc(10px + env(safe-area-inset-top));
   left: 16px;
+}
+
+/* Главное меню: во весь экран поверх игры, но под панелями разделов — они открываются поверх него */
+.menu {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  /* Фон больше экрана (размытие и «дыхание»): clip обрезает его, не давая слою прокручиваться — с hidden браузер
+     сдвигал всё меню при повороте экрана. hidden — для старых браузеров без clip */
+  overflow: hidden;
+  overflow: clip;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+/* Картинка размыта не до неузнаваемости и медленно «дышит» — экран живой, но не отвлекает от кнопок */
+.menu-bg {
+  position: absolute;
+  inset: -24px;
+  background: center / cover no-repeat;
+  filter: blur(3px) saturate(1.1);
+  opacity: 0;
+  transition: opacity 0.6s ease-out;
+  animation: menu-drift 40s ease-in-out infinite alternate;
+}
+
+/* Картинка загрузилась — проявляется (до этого виден тёмный фон меню) */
+.menu-bg.loaded {
+  opacity: 1;
+}
+
+@keyframes menu-drift {
+  from {
+    transform: scale(1.06);
+  }
+  to {
+    transform: scale(1.14) translate(-1.5%, -1%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-bg {
+    animation: none;
+    transform: scale(1.06);
+  }
+}
+
+/* Затемнение по краям и сверху-снизу: белый текст читается на любой картинке */
+.menu-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(5, 25, 35, 0) 30%, rgba(5, 25, 35, 0.4) 100%),
+    linear-gradient(to bottom, rgba(5, 25, 35, 0.25), rgba(5, 25, 35, 0) 30%, rgba(5, 25, 35, 0.1) 60%, rgba(5, 25, 35, 0.45));
+}
+
+.menu-body {
+  position: relative;
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 32px));
+  max-height: 100%;
+  margin: auto;
+  padding: calc(68px + env(safe-area-inset-top)) 0 calc(20px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  touch-action: pan-y;
+}
+
+.menu-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.menu-title {
+  margin: 0;
+  font-size: clamp(46px, 13vw, 76px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 1px;
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.25),
+    0 6px 28px rgba(0, 0, 0, 0.55);
+}
+
+.menu-tagline {
+  margin-top: 10px;
+  color: #ffe08a;
+  font-size: 17px;
+  font-weight: 700;
+  /* Светлое рассветное небо за строкой — тень плотнее, чем у заголовка */
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.8),
+    0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+.menu-stats {
+  margin-top: 14px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(11, 42, 58, 0.6);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: pre-wrap;
+}
+
+.menu-stats[hidden] {
+  display: none;
+}
+
+/* Главная кнопка — крупная, объёмная и мягко пульсирует свечением: её видно сразу */
+.menu-play {
+  width: 100%;
+  max-width: 320px;
+  min-height: 64px;
+  border: none;
+  border-radius: 32px;
+  background: linear-gradient(#5fcf65, #3a9a40);
+  color: #fff;
+  font: 800 24px var(--ui-font);
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 6px 0 #2a6e2f,
+    0 10px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  animation: menu-glow 2.2s ease-in-out infinite;
+}
+
+.menu-play:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 2px 0 #2a6e2f,
+    0 6px 16px rgba(0, 0, 0, 0.35);
+  animation: none;
+}
+
+@keyframes menu-glow {
+  50% {
+    box-shadow:
+      0 6px 0 #2a6e2f,
+      0 0 0 8px rgba(95, 207, 101, 0.28),
+      0 10px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.menu-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 86px;
+  padding: 10px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 16px;
+  background: rgba(11, 42, 58, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--ui-text);
+  font: 600 14px var(--ui-font);
+  cursor: pointer;
+}
+
+.menu-tile:active {
+  background: rgba(11, 42, 58, 0.8);
+}
+
+.menu-tile-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.menu-tile-label {
+  white-space: nowrap;
+}
+
+.menu-tile .hud-alert {
+  left: auto;
+  right: -6px;
+}
+
+/* «Выйти в меню?» посреди заброса: маленькое окно по центру, игра за ним идёт дальше */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  font-family: var(--ui-font);
+}
+
+.confirm-backdrop[hidden] {
+  display: none;
+}
+
+.confirm {
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 32px));
+  padding: 18px 16px 16px;
+  border-radius: 18px;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.confirm-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.confirm-text {
+  margin-top: 8px;
+  color: var(--ui-muted);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.confirm-button {
+  flex: 1;
+  min-height: 48px;
+  border: none;
+  border-radius: 12px;
+  color: var(--ui-text);
+  font: 700 16px var(--ui-font);
+  cursor: pointer;
+}
+
+.confirm-button.stay {
+  background: var(--ui-ok);
+}
+
+.confirm-button.leave {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Телефон лёжа: всё в одну колонку не влезает по высоте — плитки в один ряд, шрифты мельче */
+@media (max-height: 500px) {
+  .menu-body {
+    width: min(720px, calc(100% - 150px));
+    padding-top: calc(12px + env(safe-area-inset-top));
+    gap: 14px;
+  }
+  .menu-title {
+    font-size: 42px;
+  }
+  .menu-tagline {
+    margin-top: 4px;
+    font-size: 14px;
+  }
+  .menu-stats {
+    margin-top: 8px;
+  }
+  .menu-play {
+    min-height: 52px;
+    font-size: 20px;
+  }
+  .menu-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .menu-tile {
+    min-height: 66px;
+  }
+  .menu-tile-icon {
+    font-size: 24px;
+  }
 }
 
 /* Верхние кнопки не делят ширину с нижними: правило выше для телефона их не касается */
@@ -539,6 +833,17 @@ body {
 /* Карточка прикормки сама не нажимается — в ней свои кнопки */
 .sheet-card.bait-card {
   cursor: default;
+}
+
+/* «Как играть»: карточки — просто текст, читается в полную яркость */
+.sheet-card.info-card {
+  min-height: 0;
+  cursor: default;
+}
+
+.info-card .sheet-card-desc {
+  color: var(--ui-text);
+  line-height: 1.35;
 }
 
 .sheet-actions {

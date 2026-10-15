@@ -79,6 +79,8 @@ export interface PackArt {
   fish: Readonly<Record<string, string>>
   /** Значок серебра — после слова «Серебро» в строке счётчиков. Без него — только слово. */
   silver?: string
+  /** Фон главного меню, слегка размытый. Без него — картинка текущего водоёма. */
+  menu?: string
 }
 
 export interface WaterBody {
@@ -290,6 +292,25 @@ export interface PackTexts {
     getNow: string
     /** У прикормки в запасе, пока действует другая (или эта же). */
     busy: string
+  }
+  /** Главное меню: при запуске и по кнопке в углу — в любой момент, даже посреди боя. */
+  menu: {
+    /** Подпись кнопки меню в углу (на телефоне видна только иконка). */
+    button: string
+    tagline: string
+    play: string
+    /** Вместо «Играть», если меню открыли посреди игры. */
+    resume: string
+    /** Под заголовком у того, кто уже ловил: сколько поймано и сколько серебра. */
+    stats: (fish: string, silver: string) => string
+    howTo: string
+    /** Вопрос перед уходом в меню посреди заброса или боя: заброс прервётся. */
+    exit: { title: string; text: string; confirm: string; cancel: string }
+  }
+  /** «Как играть»: правила по разделам — заброс, поклёвка, бой, снасти и всё остальное. */
+  howTo: {
+    title: string
+    sections: readonly TutorialText[]
   }
   daily: {
     title: string

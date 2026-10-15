@@ -125,10 +125,11 @@ const LAKE: WaterBody = {
 
 // Цены подобраны расчётом прогресса: первая покупка (леска) — ещё в пруду, болонская — сразу после открытия реки,
 // полная снасть — примерно за 7,5 часа игры. Без цены — стартовая снасть.
-// Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба
-const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Простая и надёжная. Ловит у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
-const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Пруд добросит целиком, реку — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp', price: 200 }
-const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Дальний заброс к руслу, омутам и глубокой яме озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp', price: 72000 }
+// Удочка решает, до какого места ловли добросишь: дальше — глубже, другая и более крупная рыба.
+// Игроку это объясняем длиной: короткая достаёт только у берега, чем длиннее — тем дальше
+const BAMBOO: Rod = { id: 'bamboo', name: 'Бамбуковая удочка', description: 'Короткая, простая и надёжная. Достаёт только у самого берега', castLevels: 1, sprite: 'sprites/rod-bamboo.webp' }
+const BOLOGNESE: Rod = { id: 'bolognese', name: 'Болонская удочка', description: 'Длинная, с катушкой. Достаёт весь пруд, на реке — до бровки, на озере — до свала', castLevels: 2, sprite: 'sprites/rod-bolognese.webp', price: 200 }
+const FEEDER: Rod = { id: 'feeder', name: 'Фидер', description: 'Самая длинная: достаёт до русла, омутов и глубокой ямы озера', castLevels: 3, sprite: 'sprites/rod-feeder.webp', price: 72000 }
 
 const LINE_02: Line = { id: 'mono02', name: 'Леска 0,2 мм', description: 'Для плотвы, карася и окуня', strength: 1 }
 const LINE_03: Line = { id: 'mono03', name: 'Леска 0,3 мм', description: 'Выдержит леща и некрупную щуку', strength: 1.3, price: 100 }
@@ -240,6 +241,7 @@ export const RIVERS: ContentPack = {
     floatAboveWater: 0.3,
     fish: Object.fromEntries(ALL_FISH.map((f) => [f.id, `sprites/${f.id}.webp`])),
     silver: 'sprites/silver.webp',
+    menu: 'bg/menu.webp',
   },
   sounds: {
     splash: 'audio/splash.wav',

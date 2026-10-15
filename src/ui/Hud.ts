@@ -1,6 +1,9 @@
 import { button, el } from './dom.ts'
 
-/** Кнопки поверх игры: внизу слева и вверху справа. Сцена показывает их только между забросами. */
+/**
+ * Кнопки поверх игры: внизу слева — между забросами, вверху справа (меню) — и посреди боя: вернуться в главное меню
+ * можно в любой момент. Когда что показывать, решает сцена.
+ */
 export class Hud {
   private readonly bar: HTMLDivElement
   private readonly top: HTMLDivElement
@@ -39,7 +42,7 @@ export class Hud {
   }
 
   /**
-   * Где кнопки вверху справа, CSS-пиксели. Пока они спрятаны (бой, обучение) — где были в последний раз,
+   * Где кнопки вверху справа, CSS-пиксели. Пока они спрятаны (обучение, открыто меню) — где были в последний раз,
    * чтобы счётчики рядом не прыгали; ни разу не показывались — null.
    */
   get topRect(): DOMRect | null {
@@ -48,12 +51,13 @@ export class Hud {
     return this.lastTopRect
   }
 
+  // Меняем DOM только при смене состояния: сцена зовёт это каждый кадр
   setVisible(visible: boolean): void {
-    // Меняем DOM только при смене состояния: сцена зовёт это каждый кадр
-    if (this.bar.hidden !== !visible) {
-      this.bar.hidden = !visible
-      this.top.hidden = !visible
-    }
+    if (this.bar.hidden !== !visible) this.bar.hidden = !visible
+  }
+
+  setTopVisible(visible: boolean): void {
+    if (this.top.hidden !== !visible) this.top.hidden = !visible
   }
 
   destroy(): void {

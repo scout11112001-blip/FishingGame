@@ -3,6 +3,7 @@ import { makeFish, rollFish, type HookedFish } from '../core/fish.ts'
 import { castLevelRange, DEFAULT_TUNING, FishingSession, MAX_CAST_LEVELS, type EscapeReason, type FightView, type FishingEvent, type Tuning } from '../core/FishingSession.ts'
 import { baitWorks, isBaitActive, zonesFor } from '../content/bait.ts'
 import { dayKey } from '../content/daily.ts'
+import { menuAccess } from '../content/menu.ts'
 import { ACTIVE_PACK } from '../content/index.ts'
 import { newlyOpened, nextLockedWater, XP_PER_FISH } from '../content/progress.ts'
 import type { PlayerState } from '../content/player.ts'
@@ -13,9 +14,12 @@ import { SANDBOX } from '../sandbox.ts'
 import { rodFits, tackleOf, weakestFittingRod, type ContentPack, type PackTexts, type WaterBody } from '../content/types.ts'
 import { AchievementPanel } from '../ui/AchievementPanel.ts'
 import { CabinPanel } from '../ui/CabinPanel.ts'
+import { ConfirmDialog } from '../ui/ConfirmDialog.ts'
 import { BaitPanel } from '../ui/BaitPanel.ts'
 import { DailyPanel } from '../ui/DailyPanel.ts'
+import { HowToPanel } from '../ui/HowToPanel.ts'
 import { Hud } from '../ui/Hud.ts'
+import { MainMenu } from '../ui/MainMenu.ts'
 import { SoundButton } from '../ui/SoundButton.ts'
 import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
@@ -32,12 +36,14 @@ const RESULT_MIN_SECONDS = 0.6
 const ROD_SPAN = 0.8
 /** Какая доля ширины экрана доступна для заброса по горизонтали. */
 const CAST_SPAN = 0.9
-/** Сколько секунд висит ненавязчивое предупреждение: «не добросит», «нужна удочка дальнобойнее». */
+/** Сколько секунд висит ненавязчивое предупреждение: «удочка слишком короткая», «нужна удочка длиннее». */
 const NOTICE_SECONDS = 2.5
 /** Из скольких точек состоит изгибающаяся удочка-картинка. */
 const ROD_POINTS = 24
 /** Мельче этого счётчики в углу не становятся, как бы ни росла сумма: дальше уже не прочитать. */
 const WALLET_MIN_FONT = 8
+/** Сколько после закрытия меню нажатия по воде не считаются: второй тап по «Играть» не должен забросить удочку. */
+const MENU_TAP_GUARD_MS = 400
 
 const COLOR = {
   rod: 0x6b4423,
@@ -101,7 +107,15 @@ export class FishingScene extends Phaser.Scene {
   private achievementPanel!: AchievementPanel
   /** Хижина — если она есть в пакете. */
   private cabinPanel: CabinPanel | null = null
-  private achievementButton!: HTMLButtonElement
+  private howToPanel!: HowToPanel
+  /** Главное меню: при запуске и по кнопке в углу. Пока открыто, игра стоит. */
+  private menu!: MainMenu
+  private menuButton!: HTMLButtonElement
+  /** «Выйти в меню?» — посреди заброса или боя. Игру не останавливает. */
+  private exitDialog!: ConfirmDialog
+  /** Меню уже открывали — дальше на его главной кнопке «Продолжить», а не «Играть». */
+  private menuShown = false
+  private menuClosedAt = -Infinity
   private tutorialOverlay!: TutorialOverlay
   private soundButton!: SoundButton
 
@@ -224,15 +238,31 @@ export class FishingScene extends Phaser.Scene {
     this.hud.addButton(this.texts.tackle.button, () => this.tacklePanel.open())
     this.hud.addButton(this.texts.waters.button, () => this.waterPanel.open())
     this.hud.addButton(this.texts.bait.button, () => this.baitPanel.open())
-    // Хижина — слева от достижений: кубок остаётся в углу, зеркально кнопке звука
     const cabin = this.pack.cabin
-    if (cabin) {
-      const panel = new CabinPanel(this.pack, cabin, this.player)
-      this.cabinPanel = panel
-      this.hud.addTopButton('🏠', this.texts.cabin.button, () => panel.open())
-    }
+    const cabinPanel = cabin ? new CabinPanel(this.pack, cabin, this.player) : null
+    this.cabinPanel = cabinPanel
     this.achievementPanel = new AchievementPanel(this.pack, this.player.achievements)
-    this.achievementButton = this.hud.addTopButton('🏆', this.texts.achievements.button, () => this.achievementPanel.open())
+    this.howToPanel = new HowToPanel(this.pack)
+    // Главное меню — все разделы игры. Хижина и достижения — только в нём: постоянные кнопки вверху
+    // отнимают место у счётчиков, а кнопка меню (зеркально кнопке звука) нужна и так
+    const t = this.texts
+    this.menu = new MainMenu({
+      title: this.pack.title,
+      tagline: t.menu.tagline,
+      play: t.menu.play,
+      resume: t.menu.resume,
+      items: [
+        { icon: '🎣', label: t.tackle.button, onClick: () => this.tacklePanel.open() },
+        { icon: '🗺️', label: t.waters.title, onClick: () => this.waterPanel.open() },
+        { icon: '🪱', label: t.bait.button, onClick: () => this.baitPanel.open() },
+        ...(cabinPanel ? [{ icon: '🏠', label: t.cabin.button, onClick: () => cabinPanel.open() }] : []),
+        { icon: '🏆', label: t.achievements.button, onClick: () => this.achievementPanel.open(), alert: () => this.player.achievements.hasUnseen },
+        { icon: '❓', label: t.menu.howTo, onClick: () => this.howToPanel.open() },
+      ],
+      onPlay: () => (this.menuClosedAt = performance.now()),
+    })
+    this.menuButton = this.hud.addTopButton('☰', t.menu.button, () => this.requestMenu())
+    this.exitDialog = new ConfirmDialog(t.menu.exit, () => this.leaveToMenu())
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
     this.sound.mute = this.player.muted
     this.startAmbient()
@@ -248,12 +278,16 @@ export class FishingScene extends Phaser.Scene {
       this.dailyPanel.destroy()
       this.achievementPanel.destroy()
       this.cabinPanel?.destroy()
+      this.howToPanel.destroy()
+      this.menu.destroy()
+      this.exitDialog.destroy()
       this.tutorialOverlay.destroy()
       this.soundButton.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (performance.now() - this.menuClosedAt < MENU_TAP_GUARD_MS) return
       // Между забросами нажатие — это бросок в точку; в остальное время — палец на удочке
       if (this.session.phase === 'idle') return this.castAt(p)
       this.aimRod(p)
@@ -279,13 +313,15 @@ export class FishingScene extends Phaser.Scene {
       if (paused) this.sound.pauseAll()
       else this.sound.resumeAll()
     })
+    // Игра начинается с главного меню
+    this.openMenu()
     // Всё загружено и нажимается — сообщаем площадке
     this.platform.ready()
   }
 
   update(_time: number, deltaMs: number) {
-    // Пока на экране шаг обучения, игра стоит: и рыбалка, и покачивание поплавка
-    const dt = this.tutorial?.frozen || this.platformPaused ? 0 : deltaMs / 1000
+    // Пока на экране шаг обучения или меню, игра стоит: и рыбалка, и покачивание поплавка
+    const dt = this.tutorial?.frozen || this.platformPaused || this.menu.isOpen ? 0 : deltaMs / 1000
     this.elapsed += dt
     this.nibbleAge += dt
     if (this.notice) this.notice.age += dt
@@ -343,8 +379,56 @@ export class FishingScene extends Phaser.Scene {
   }
 
   private get panelOpen(): boolean {
-    const panels = [this.tacklePanel, this.waterPanel, this.baitPanel, this.achievementPanel, this.dailyPanel, this.cabinPanel]
+    const panels = [
+      this.menu,
+      this.exitDialog,
+      this.tacklePanel,
+      this.waterPanel,
+      this.baitPanel,
+      this.achievementPanel,
+      this.dailyPanel,
+      this.cabinPanel,
+      this.howToPanel,
+    ]
     return panels.some((p) => p?.isOpen)
+  }
+
+  /**
+   * Кнопка меню в углу. Между забросами и с экрана итога — сразу в меню. Посреди заброса или боя паузы нет:
+   * спрашиваем, бросить ли заброс, а пока окно открыто, бой идёт дальше. В обучении кнопки нет.
+   */
+  private requestMenu() {
+    const access = menuAccess(this.session.phase, !!this.tutorial)
+    if (access === 'open') this.leaveToMenu()
+    else if (access === 'confirm') {
+      // Палец «отпускаем»: окно закрывает игру, и держать леску им уже нельзя
+      this.session.release()
+      this.exitDialog.open()
+    }
+  }
+
+  /**
+   * Уйти в меню: заброс брошен без итога (abort), экран итога закрыт. Межстраничной рекламы тут нет — это не конец
+   * заброса. Пока окно «Выйти?» было открыто, рыба могла попасться — тогда она уже засчитана, второй раз нет.
+   */
+  private leaveToMenu() {
+    if (menuAccess(this.session.phase, !!this.tutorial) === 'none') return
+    // Итог — до abort: по нему сцена показала бы рекламу на переходе в покой
+    this.result = null
+    this.notice = null
+    this.session.abort()
+    this.openMenu()
+  }
+
+  /** Главное меню поверх игры: при запуске и по кнопке в углу. */
+  private openMenu() {
+    const stats = this.player.achievements.stats
+    this.menu.open({
+      background: this.pack.art?.menu ?? this.player.water.backdrop?.image ?? null,
+      stats: stats.catches > 0 ? this.texts.menu.stats(stats.catches.toLocaleString('ru-RU'), formatSilver(this.player.shop.silver)) : null,
+      resume: this.menuShown,
+    })
+    this.menuShown = true
   }
 
   /** Отдаёт сессии текущие водоём, снасть и прикормку. Не в покое сессия их не примет — тогда повторим в следующих кадрах. */
@@ -687,9 +771,12 @@ export class FishingScene extends Phaser.Scene {
 
     // Интерфейс
     const walletBottom = this.drawWallet(fontSize * 0.8)
-    // Кнопки меню — после обучения: пока оно идёт, ничто не уводит от первых уловов
+    // Кнопки внизу — после обучения: пока оно идёт, ничто не уводит от первых уловов.
+    // Кнопка главного меню — тоже после обучения, но и посреди боя: в меню можно в любой момент (см. requestMenu)
     this.hud.setVisible(idle && !this.tutorial)
-    this.hud.setAlert(this.achievementButton, this.player.achievements.hasUnseen)
+    this.hud.setTopVisible(!this.tutorial && !this.menu.isOpen && !this.exitDialog.isOpen)
+    this.hud.setAlert(this.menuButton, this.player.achievements.hasUnseen)
+    if (this.menu.isOpen) this.menu.syncAlerts()
     const status = this.statusText
       .setWordWrapWidth(w * 0.9)
       .setFontSize(phase === 'bite' ? fontSize * 1.4 : phase === 'fighting' ? fontSize * 0.8 : fontSize)
@@ -729,7 +816,8 @@ export class FishingScene extends Phaser.Scene {
   /** Карточка шага обучения и вырез над тем, о чём она. */
   private drawTutorial(float: Point, floatR: number, w: number, h: number) {
     const step = this.tutorial?.step
-    if (!step) return this.tutorialOverlay.hide()
+    // Меню закрывает игру целиком — и карточку обучения: вернётся, когда меню закроют
+    if (!step || this.menu.isOpen) return this.tutorialOverlay.hide()
     const t = this.texts.tutorial
     let card
     if (step.id === 'silver') card = t.silver(formatSilver(this.result?.kind === 'caught' ? this.result.price : 0))

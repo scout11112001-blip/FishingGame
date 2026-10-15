@@ -107,6 +107,85 @@ describe.each(ALL_PACKS.map((p) => [p.id, p] as const))('случайный иг
     expect(caught).toBeGreaterThan(0)
   })
 
+  it('уход в меню в случайный момент: у заброса один итог или ни одного, дальше всё работает', { timeout: 60_000 }, () => {
+    let casts = 0
+    let leftMidCast = 0
+    let leftFromResult = 0
+    const leftIn = new Set<Phase>()
+    for (let seed = 1; seed <= 40; seed++) {
+      const rng = seededRng(seed * 104_729)
+      const water = pack.waters[seed % pack.waters.length]
+      const pick = <T>(items: readonly T[]) => items[Math.floor(rng() * items.length)]
+      const loadout = { rod: pick(pack.rods), line: pick(pack.lines), reel: pick(pack.reels) }
+      const session = new FishingSession({ zones: zoneSpawns(water), tackle: tackleOf(loadout, water), rng: seededRng(seed) })
+      const phases: Phase[] = ['idle']
+      let results = 0
+      session.on((e) => {
+        if (e.type === 'phase') {
+          const prev = phases.at(-1)!
+          // Уход в меню — из любой фазы, кроме покоя, сразу в покой; остальное — по обычному порядку
+          if (!NEXT[prev].includes(e.phase) && !(e.phase === 'idle' && prev !== 'idle')) expect.fail(`переход ${prev} → ${e.phase}`)
+          phases.push(e.phase)
+        }
+        if (e.type === 'caught' || e.type === 'escaped') results++
+      })
+      const play = chaosPlayer(session, rng)
+      for (let cast = 0; cast < 10; cast++) {
+        results = 0
+        expect(session.castTo(rng() * 1.2, rng() * 2 - 1)).toBe(true)
+        casts++
+        // Когда уйти в меню: чаще — в первые секунды (полёт, ожидание, поклёвка), иногда — посреди боя, иногда — никогда
+        const leaveAt = rng() < 0.7 ? rng() ** 2 * 40 : Infinity
+        let left: Phase | null = null
+        let t = 0
+        for (;;) {
+          if (t >= leaveAt) {
+            left = session.phase
+            expect(session.abort()).toBe(true)
+            break
+          }
+          if (session.phase === 'caught' || session.phase === 'escaped') {
+            // С экрана итога — то в меню, то дальше ловить
+            if (rng() < 0.3) {
+              left = session.phase
+              session.abort()
+            } else session.press()
+            break
+          }
+          if (session.phase === 'waiting' && rng() < 0.002) session.press()
+          if (session.phase === 'bite' && rng() < 0.05) session.press()
+          if (session.phase === 'fighting') {
+            play()
+            checkView(session.fight!, `пакет ${pack.id}, зерно ${seed}, заброс ${cast}, ${t.toFixed(1)} с`)
+          }
+          session.update(DT)
+          t += DT
+          if (t > MAX_FIGHT_SECONDS) expect.fail(`бой не кончился: зерно ${seed}, фаза ${session.phase}`)
+        }
+        expect(session.phase).toBe('idle')
+        expect(session.fight).toBeNull()
+        // В покое после ухода ничего не происходит само: ни поклёвки, ни запоздалого итога
+        const settled = results
+        for (let i = 0; i < 180; i++) session.update(DT)
+        expect(session.phase).toBe('idle')
+        expect(results).toBe(settled)
+        // Итог у заброса один; ушёл до итога — итога нет совсем
+        expect(results).toBeLessThanOrEqual(1)
+        const midCast = left !== null && left !== 'caught' && left !== 'escaped'
+        expect(results).toBe(midCast ? 0 : 1)
+        if (midCast) {
+          leftMidCast++
+          leftIn.add(left!)
+        } else if (left) leftFromResult++
+      }
+    }
+    expect(casts).toBe(400)
+    console.log(`уход в меню: ${casts} забросов, ушёл посреди — ${leftMidCast} (${[...leftIn].join(', ')}), с экрана итога — ${leftFromResult}`)
+    // Уходы и правда случались во всех фазах заброса
+    for (const phase of ['casting', 'waiting', 'bite', 'fighting'] as Phase[]) expect(leftIn.has(phase), phase).toBe(true)
+    expect(leftFromResult).toBeGreaterThan(0)
+  })
+
   it('огромные и нулевые шаги времени не ломают бой', () => {
     const water = pack.waters[0]
     const session = new FishingSession({ zones: zoneSpawns(water), tackle: tackleOf(pack.starter, water), rng: seededRng(5) })

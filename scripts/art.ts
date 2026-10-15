@@ -1,6 +1,8 @@
-// Готовит картинки для игры из картинок нейросети. Запуск: npm run art
-// - Фоны водоёмов (art/bg → public/bg): увеличивает нейросетью Real-ESRGAN — исходники нейросети мелкие
-//   и мыльные, — уменьшает до нужного размера и сохраняет в WebP. Без апскейлера в tools/ — просто перекодирует.
+// Готовит картинки для игры из картинок нейросети. Запуск: npm run art, только часть — npm run art -- menu
+// (берутся картинки, в чьём пути в public/ есть это слово: остальные не пересобираются и не меняются в git).
+// - Фоны водоёмов (art/bg → public/bg) и фон главного меню (art/menuBackground.jpg → public/bg/menu): увеличивает
+//   нейросетью Real-ESRGAN — исходники нейросети мелкие и мыльные, — уменьшает до нужного размера и сохраняет в WebP.
+//   Без апскейлера в tools/ — просто перекодирует.
 // - Спрайты (art/sprites → public/sprites, мебель art/cabin → public/cabin): вырезает однотонный фон,
 //   обрезает пустые поля, уменьшает и сохраняет в WebP с прозрачностью.
 // - Комната хижины (art/cabin/interior.jpg → public/cabin): просто перекодирует.
@@ -14,28 +16,42 @@ import sharp from 'sharp'
 const UPSCALER = 'tools/realesrgan/realesrgan-ncnn-vulkan.exe'
 /** Модель для фотографий (есть ещё для аниме — им не подходит). Увеличивает в 4 раза. */
 const UPSCALE_MODEL = 'realesrgan-x4plus'
-const BACKGROUNDS = ['pond', 'river', 'lake']
-/** Высота фона: экран телефона с плотностью 2 — около 1600 px. Выше — только лишний вес. */
-const BACKGROUND_HEIGHT = 1536
+/** Картинки во весь экран: откуда (относительно art/), куда (относительно public/, без расширения) и какой высоты. */
+const BACKGROUNDS = [
+  // Экран телефона с плотностью 2 — около 1600 px по высоте. Выше — только лишний вес
+  { src: 'bg/pond.jpg', out: 'bg/pond', height: 1536 },
+  { src: 'bg/river.jpg', out: 'bg/river', height: 1536 },
+  { src: 'bg/lake.jpg', out: 'bg/lake', height: 1536 },
+  // Фон меню размыт — мелкие детали всё равно не видны, хватает и меньшего
+  { src: 'menuBackground.jpg', out: 'bg/menu', height: 1080 },
+]
+
+/** Что пересобрать: часть пути в public/ из командной строки; не задано — всё. */
+const only = process.argv[2]
+const wanted = (out: string) => !only || out.includes(only)
 
 mkdirSync('public/bg', { recursive: true })
 const upscale = existsSync(UPSCALER)
 if (!upscale) console.warn(`Нет ${UPSCALER} — фоны будут без увеличения`)
 const temp = mkdtempSync(join(tmpdir(), 'fishing-art-'))
 try {
-  for (const name of BACKGROUNDS) {
-    let source = `art/bg/${name}.jpg`
+  for (const { src, out, height } of BACKGROUNDS) {
+    if (!wanted(out)) continue
+    let source = `art/${src}`
+    if (!existsSync(source)) {
+      console.warn(`Нет ${source} — пропускаю`)
+      continue
+    }
     if (upscale) {
-      const big = join(temp, `${name}.png`)
+      const big = join(temp, `${out.replace('/', '-')}.png`)
       execFileSync(UPSCALER, ['-i', source, '-o', big, '-n', UPSCALE_MODEL], { stdio: 'ignore' })
       source = big
     }
-    const out = `public/bg/${name}.webp`
     const result = await sharp(source)
-      .resize({ height: BACKGROUND_HEIGHT, withoutEnlargement: !upscale })
+      .resize({ height, withoutEnlargement: !upscale })
       .webp({ quality: 82, effort: 6 })
-      .toFile(out)
-    console.log(`${name}.jpg → ${out}: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
+      .toFile(`public/${out}.webp`)
+    console.log(`art/${src} → public/${out}.webp: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
   }
 } finally {
   rmSync(temp, { recursive: true, force: true })
@@ -43,11 +59,13 @@ try {
 
 // Комната хижины: в окне игры она не шире ~800 px даже на плотном экране — исходника хватает без увеличения
 const INTERIOR = 'art/cabin/interior.jpg'
-if (existsSync(INTERIOR)) {
-  mkdirSync('public/cabin', { recursive: true })
-  const result = await sharp(INTERIOR).resize({ width: 1024, withoutEnlargement: true }).webp({ quality: 82, effort: 6 }).toFile('public/cabin/interior.webp')
-  console.log(`${INTERIOR} → public/cabin/interior.webp: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
-} else console.warn(`Нет ${INTERIOR} — пропускаю`)
+if (wanted('cabin/interior')) {
+  if (existsSync(INTERIOR)) {
+    mkdirSync('public/cabin', { recursive: true })
+    const result = await sharp(INTERIOR).resize({ width: 1024, withoutEnlargement: true }).webp({ quality: 82, effort: 6 }).toFile('public/cabin/interior.webp')
+    console.log(`${INTERIOR} → public/cabin/interior.webp: ${result.width}×${result.height}, ${Math.round(result.size / 1024)} КБ`)
+  } else console.warn(`Нет ${INTERIOR} — пропускаю`)
+}
 
 interface Job {
   /** Относительно art/. */
@@ -104,6 +122,7 @@ const PADDING = 4
 const SPILL_BAND = 8
 
 for (const job of JOBS) {
+  if (!wanted(job.out)) continue
   if (!existsSync(`art/${job.src}`)) {
     console.warn(`Нет art/${job.src} — пропускаю`)
     continue
