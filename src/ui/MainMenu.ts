@@ -15,6 +15,8 @@ export interface MenuContent {
   play: string
   resume: string
   items: readonly MenuItem[]
+  /** Скромная ссылка под плитками — поддержка игры. Нет — нет и ссылки. */
+  support?: { label: string; onClick: () => void }
   onPlay: () => void
 }
 
@@ -65,6 +67,7 @@ export class MainMenu {
     }
 
     body.append(head, this.play, grid)
+    if (content.support) body.append(button('menu-link', content.support.label, content.support.onClick))
     this.root.append(this.bg, el('div', 'menu-shade'), body)
     // Фон больше экрана, и в браузерах без overflow: clip слой меню может съехать (например, при повороте) — возвращаем
     this.root.addEventListener('scroll', () => this.root.scrollTo(0, 0))

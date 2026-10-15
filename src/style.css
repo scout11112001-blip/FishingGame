@@ -357,6 +357,19 @@ body {
   right: -6px;
 }
 
+/* Поддержка — не плитка, а ссылка под плитками: нужна редко и не должна спорить с «Играть» */
+.menu-link {
+  margin-top: -8px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(11, 42, 58, 0.45);
+  color: var(--ui-text);
+  font: 600 15px var(--ui-font);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+
 /* «Выйти в меню?» посреди заброса: маленькое окно по центру, игра за ним идёт дальше */
 .confirm-backdrop {
   position: fixed;

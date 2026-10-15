@@ -15,6 +15,8 @@ export const FULLSCREEN_AD_INTERVAL_MS = 5 * 60 * 1000
 
 export class YandexPlatform implements Platform {
   readonly name = 'yandex'
+  readonly sounds = true
+  readonly supportUrl = null
   readonly rewardedAds = true
   private readonly ysdk: SDK
   private readonly player: Player | null

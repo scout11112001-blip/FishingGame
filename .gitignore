@@ -11,7 +11,10 @@ node_modules
 dist
 dist-sandbox
 dist-yandex
+dist-vk
 dist-ssr
+# Архив, который vk-miniapps-deploy собирает для хостинга ВК
+/*.zip
 *.local
 
 # Editor directories and files

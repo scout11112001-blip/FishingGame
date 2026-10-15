@@ -7,6 +7,8 @@ import type { Platform } from './platform.ts'
  */
 export class LocalPlatform implements Platform {
   readonly name = 'local'
+  readonly sounds = true
+  readonly supportUrl = null
   readonly rewardedAds = false
 
   ready(): void {}

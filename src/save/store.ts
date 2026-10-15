@@ -56,19 +56,19 @@ export class LocalStore implements SaveStore {
   }
 }
 
-/** Ключ сохранения в данных игрока Яндекса. */
-const CLOUD_KEY = 'save'
-/** Облако — не чаще раза в столько мс: у Яндекса не больше 100 записей за 5 минут. */
+/** Ключ сохранения в облачных данных игрока. */
+export const CLOUD_KEY = 'save'
+/** Облако — не чаще раза в столько мс: у Яндекса не больше 100 записей за 5 минут, у ВК — 1000 вызовов в час. */
 export const CLOUD_INTERVAL_MS = 10_000
 
-/** То, что нужно облаку от игрока Яндекса (Player из SDK): прочитать и записать данные. */
+/** То, что нужно облаку: прочитать и записать данные игрока. Это Player из SDK Яндекса или VkCloud (хранилище ВК). */
 export interface CloudPlayer {
   getData(keys: string[]): Promise<Record<string, unknown>>
   setData(data: Record<string, unknown>, flush?: boolean): Promise<void>
 }
 
 /**
- * Облачное сохранение Яндекса: player.setData / getData. Пишем не чаще CLOUD_INTERVAL_MS — свежий снимок
+ * Облачное сохранение: player.setData / getData. Пишем не чаще CLOUD_INTERVAL_MS — свежий снимок
  * просто ждёт своей очереди; при сворачивании (urgent) — сразу и с flush, чтобы не потерять.
  */
 export class CloudStore implements SaveStore {

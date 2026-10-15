@@ -20,6 +20,7 @@ import { DailyPanel } from '../ui/DailyPanel.ts'
 import { HowToPanel } from '../ui/HowToPanel.ts'
 import { Hud } from '../ui/Hud.ts'
 import { MainMenu } from '../ui/MainMenu.ts'
+import { hideLoader, setLoadProgress } from '../ui/loader.ts'
 import { SoundButton } from '../ui/SoundButton.ts'
 import { TutorialOverlay, type Rect } from '../ui/TutorialOverlay.ts'
 import { TacklePanel } from '../ui/TacklePanel.ts'
@@ -117,7 +118,8 @@ export class FishingScene extends Phaser.Scene {
   private menuShown = false
   private menuClosedAt = -Infinity
   private tutorialOverlay!: TutorialOverlay
-  private soundButton!: SoundButton
+  /** Кнопка звука в углу; null — на площадке без звука. */
+  private soundButton: SoundButton | null = null
 
   private readonly pack: ContentPack = ACTIVE_PACK
   /** Прогресс игрока: серебро, снасти, опыт, водоём, прикормка, достижения. Его же сохраняет автосохранение. */
@@ -154,6 +156,8 @@ export class FishingScene extends Phaser.Scene {
   }
 
   preload() {
+    // Полоска на экране загрузки: код и сохранение уже есть (первая пятая), дальше — картинки и звуки
+    this.load.on(Phaser.Loader.Events.PROGRESS, (progress: number) => setLoadProgress(0.2 + 0.8 * progress))
     for (const water of this.pack.waters) if (water.backdrop) this.load.image(backdropKey(water), water.backdrop.image)
     for (const rod of this.pack.rods) if (rod.sprite) this.load.image(rodKey(rod.id), rod.sprite)
     const art = this.pack.art
@@ -162,7 +166,8 @@ export class FishingScene extends Phaser.Scene {
       if (art.silver) this.load.image(SILVER_KEY, art.silver)
       for (const [id, path] of Object.entries(art.fish)) this.load.image(fishKey(id), path)
     }
-    const sounds = this.pack.sounds
+    // Площадка без звука (ВК: аудиофайлы на хостинге запрещены) — звуки не грузим, игра просто молчит
+    const sounds = this.platform.sounds ? this.pack.sounds : undefined
     if (sounds) {
       this.load.audio(SPLASH_KEY, sounds.splash)
       this.load.audio(CATCH_KEY, sounds.catch)
@@ -246,6 +251,7 @@ export class FishingScene extends Phaser.Scene {
     // Главное меню — все разделы игры. Хижина и достижения — только в нём: постоянные кнопки вверху
     // отнимают место у счётчиков, а кнопка меню (зеркально кнопке звука) нужна и так
     const t = this.texts
+    const supportUrl = this.platform.supportUrl
     this.menu = new MainMenu({
       title: this.pack.title,
       tagline: t.menu.tagline,
@@ -259,6 +265,8 @@ export class FishingScene extends Phaser.Scene {
         { icon: '🏆', label: t.achievements.button, onClick: () => this.achievementPanel.open(), alert: () => this.player.achievements.hasUnseen },
         { icon: '❓', label: t.menu.howTo, onClick: () => this.howToPanel.open() },
       ],
+      // Канал связи с поддержкой — требование ВК; на Яндексе внешние ссылки запрещены, там её нет
+      support: supportUrl ? { label: t.menu.support, onClick: () => window.open(supportUrl, '_blank', 'noopener') } : undefined,
       onPlay: () => (this.menuClosedAt = performance.now()),
     })
     this.menuButton = this.hud.addTopButton('☰', t.menu.button, () => this.requestMenu())
@@ -266,10 +274,13 @@ export class FishingScene extends Phaser.Scene {
     this.tutorialOverlay = new TutorialOverlay(() => this.tutorialTap())
     this.sound.mute = this.player.muted
     this.startAmbient()
-    this.soundButton = new SoundButton(this.player.muted, { mute: this.texts.ui.mute, unmute: this.texts.ui.unmute }, (muted) => {
-      this.player.muted = muted
-      this.sound.mute = muted
-    })
+    // Без звука на площадке — и без кнопки звука: выключать нечего
+    this.soundButton = this.platform.sounds
+      ? new SoundButton(this.player.muted, { mute: this.texts.ui.mute, unmute: this.texts.ui.unmute }, (muted) => {
+          this.player.muted = muted
+          this.sound.mute = muted
+        })
+      : null
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.hud.destroy()
       this.tacklePanel.destroy()
@@ -282,7 +293,7 @@ export class FishingScene extends Phaser.Scene {
       this.menu.destroy()
       this.exitDialog.destroy()
       this.tutorialOverlay.destroy()
-      this.soundButton.destroy()
+      this.soundButton?.destroy()
     })
 
     this.input.mouse?.disableContextMenu()
@@ -315,7 +326,8 @@ export class FishingScene extends Phaser.Scene {
     })
     // Игра начинается с главного меню
     this.openMenu()
-    // Всё загружено и нажимается — сообщаем площадке
+    // Всё загружено и нажимается — экран загрузки прочь, сообщаем площадке
+    hideLoader()
     this.platform.ready()
   }
 
@@ -444,7 +456,8 @@ export class FishingScene extends Phaser.Scene {
    * чтобы влезть (но не мельче WALLET_MIN_FONT). Сумма уменьшилась — шрифт снова растёт. Возвращает низ блока.
    */
   private drawWallet(baseSize: number): number {
-    const x0 = this.soundButton.right + 10
+    // Правее кнопки звука, а без неё — от края с тем же отступом, что у кнопок
+    const x0 = this.soundButton ? this.soundButton.right + 10 : 16
     const y0 = 10
     const buttons = this.hud.topRect
     const room = buttons ? buttons.left - 8 : this.view.w - 16

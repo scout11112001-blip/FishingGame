@@ -5,6 +5,7 @@ import { BAIT_DURATION_MS, isBaitActive } from './bait.ts'
 import { parseSave, PlayerState } from './player.ts'
 import { itemsOf, SLOTS } from './shop.ts'
 import { RIVERS } from './rivers/index.ts'
+import { VK_VALUE_MAX } from '../platform/vk.ts'
 
 // Сохранение — единственное, что приходит в игру «снаружи»: из браузера, из облака, из старой версии игры.
 // Здесь его портим как угодно и проверяем: игра не падает и восстанавливает разумное состояние.
@@ -192,5 +193,21 @@ describe('случайный прогресс сохраняется без по
       p.muted = rng() < 0.5
       checkSane(p, `игрок ${i}`)
     }
+  })
+})
+
+describe('размер сохранения', () => {
+  it('самое большое сохранение с запасом влезает в одно значение хранилища ВК', () => {
+    // Всё куплено, всё поймано тысячами, все достижения получены и не просмотрены, огромные числа
+    const p = played()
+    p.shop.earn(9_999_999_999)
+    p.xp = 9_999_999
+    for (const b of pack.baits) p.addBait(b, 99_999)
+    for (let i = 0; i < 2000; i++) for (const species of pack.fish) p.achievements.onCatch(makeFish(species, 1), p.xp, NOW)
+    const json = JSON.stringify({ ...p.toSave(), savedAt: NOW })
+    // Три четверти лимита ВК — запас на новые виды рыб, мебель и достижения. Перерос — пора делить сохранение на части
+    expect(json.length).toBeLessThan(VK_VALUE_MAX * 0.75)
+    // И с экранированием (если ВК хранит значение как строку в JSON) — тоже в пределах лимита
+    expect(JSON.stringify(json).length).toBeLessThan(VK_VALUE_MAX)
   })
 })

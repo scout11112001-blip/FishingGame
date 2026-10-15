@@ -5,6 +5,7 @@
 // - Универсальная иконка ВК (из той же картинки → store/vk/icon.jpg): 576×576, сом в прыжке с брызгами, без текста —
 //   ВК сам делает из неё иконки 278 и 150 px, где надпись всё равно не прочитать. Кусок картинки маленький, поэтому
 //   его сначала увеличивает нейросеть Real-ESRGAN (как фоны в npm run art); без неё — просто растягиваем.
+// - Обложка сообщества ВК (оттуда же → store/vk/cover.jpg): 1920×768, тоже из увеличенной картинки.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +18,11 @@ const TITLE = ['Наша', 'рыбалка']
 const SUBTITLE = 'ХИЖИНА У ОЗЕРА'
 /** Иконка: квадрат исходника (в его пикселях, 1376×768) — сом целиком от пасти до хвоста и брызги под ним. */
 const ICON = { out: 'store/vk/icon.jpg', size: 576, crop: { left: 800, top: 150, size: 440 } }
+/**
+ * Обложка сообщества ВК: 1920×768 (2,5 : 1) — полоса исходника во всю ширину, от верхушек сосен до брызг под сомом.
+ * Без текста: название сообщества ВК пишет под обложкой сам.
+ */
+const COVER = { out: 'store/vk/cover.jpg', width: 1920, height: 768, crop: { top: 110, height: 550 } }
 
 const UPSCALER = 'tools/realesrgan/realesrgan-ncnn-vulkan.exe'
 const UPSCALE = 4
@@ -62,6 +68,14 @@ try {
     .jpeg({ quality: 92, mozjpeg: true })
     .toFile(ICON.out)
   console.log(`${SOURCE} → ${ICON.out}: ${icon.width}×${icon.height}, ${Math.round(icon.size / 1024)} КБ`)
+
+  const meta = await sharp(source).metadata()
+  const cover = await sharp(source)
+    .extract({ left: 0, top: COVER.crop.top * scale, width: meta.width, height: COVER.crop.height * scale })
+    .resize(COVER.width, COVER.height, { fit: 'cover' })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toFile(COVER.out)
+  console.log(`${SOURCE} → ${COVER.out}: ${cover.width}×${cover.height}, ${Math.round(cover.size / 1024)} КБ`)
 } finally {
   rmSync(temp, { recursive: true, force: true })
 }

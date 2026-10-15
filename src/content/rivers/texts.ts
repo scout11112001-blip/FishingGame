@@ -74,6 +74,7 @@ export const RIVERS_TEXTS: PackTexts = {
     resume: 'Продолжить',
     stats: (fish, silver) => `🐟 Поймано: ${fish}   🪙 Серебро: ${silver}`,
     howTo: 'Как играть',
+    support: '💬 Поддержка и новости',
     exit: {
       title: 'Выйти в меню?',
       text: 'Заброс прервётся: рыба на крючке уйдёт, улов не засчитается.',

@@ -4,8 +4,48 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Наша рыбалка</title>
+    <!-- Экран загрузки — прямо здесь, а не в style.css: его видно сразу, пока грузится код игры (src/ui/loader.ts) -->
+    <style>
+      #loader {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        background: #0b2a3a;
+        color: #fff;
+        font: 600 17px sans-serif;
+        transition: opacity 0.35s ease-out;
+      }
+      #loader.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .loader-bar {
+        width: min(260px, 70vw);
+        height: 8px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.15);
+        overflow: hidden;
+      }
+      /* Пока грузится сам код, полоска уже чуть заполнена — видно, что загрузка идёт; дальше её ведёт игра */
+      #loader-fill {
+        width: 8%;
+        height: 100%;
+        border-radius: 4px;
+        background: #ffc107;
+        transition: width 0.2s ease-out;
+      }
+    </style>
   </head>
   <body>
+    <div id="loader">
+      <div>Загрузка…</div>
+      <div class="loader-bar"><div id="loader-fill"></div></div>
+    </div>
     <div id="game"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

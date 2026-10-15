@@ -304,6 +304,8 @@ export interface PackTexts {
     /** Под заголовком у того, кто уже ловил: сколько поймано и сколько серебра. */
     stats: (fish: string, silver: string) => string
     howTo: string
+    /** Ссылка на сообщество игры под плитками — где она есть (см. Platform.supportUrl). */
+    support: string
     /** Вопрос перед уходом в меню посреди заброса или боя: заброс прервётся. */
     exit: { title: string; text: string; confirm: string; cancel: string }
   }

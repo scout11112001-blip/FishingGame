@@ -7,6 +7,7 @@ import { SANDBOX } from './sandbox.ts'
 import { loadPlatform } from './platform/load.ts'
 import { AutoSaver, loadInto } from './save/autosave.ts'
 import { FishingScene } from './scenes/FishingScene.ts'
+import { setLoadProgress } from './ui/loader.ts'
 
 /**
  * Во сколько раз холст детальнее CSS-пикселей. На телефонах экран в 2–3 раза плотнее обычного, и холст
@@ -17,10 +18,12 @@ const pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2)
 // Своё сохранение у каждой обёртки, а у тестовой версии — отдельное: открытый контент не портит настоящий прогресс
 // Яндекс Игры (SDK) или просто браузер — до всего остального: от площадки зависит, где хранится прогресс
 const platform = await loadPlatform()
+setLoadProgress(0.12)
 const store = platform.saveStore(`fishing:${ACTIVE_PACK.id}${SANDBOX ? ':sandbox' : ''}`)
 const player = new PlayerState(ACTIVE_PACK, { unlockAll: SANDBOX })
 // Прогресс грузится до запуска сцены: игра сразу стартует с ним
 await loadInto(player, store, platform.now())
+setLoadProgress(0.2)
 
 // Время записи — по часам площадки: у копий с разных устройств они общие, у самих устройств — нет
 const saver = new AutoSaver(store, player, () => platform.now())
@@ -28,6 +31,8 @@ saver.start()
 // Свернули или закрыли — пишем сразу, не дожидаясь проверки по таймеру
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && saver.flush(true))
 window.addEventListener('pagehide', () => saver.flush(true))
+// И когда площадка ставит игру на паузу: в приложении ВК свёрнутую игру видно только по VKWebAppViewHide
+platform.onPause((paused) => paused && saver.flush(true))
 
 // Отладка: из консоли браузера __resetSave() стирает прогресс и перезапускает игру
 if (DEBUG) {

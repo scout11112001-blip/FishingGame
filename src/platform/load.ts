@@ -1,17 +1,21 @@
 import { LocalPlatform } from './local.ts'
 import type { Platform } from './platform.ts'
+import { TARGET } from './target.ts'
+import type { VkBridge } from './vk.ts'
 import { YandexPlatform } from './yandex.ts'
 
-/** Сколько ждать SDK: дольше — значит, игра открыта не на Яндексе, играем без него. */
+/** Сколько ждать SDK: дольше — значит, игра открыта не на площадке, играем без неё. */
 const SDK_TIMEOUT_MS = 5000
 
 /**
- * На какой площадке запущена игра. Сервер разработки (npm run dev) — всегда без SDK.
- * В сборке — подключаем SDK по документации: скрипт /sdk.js (относительный путь — для игр, загруженных
- * в консоль Яндекса), затем YaGames.init(). Скрипта нет или он не ответил — игра идёт без Яндекса, но идёт.
+ * На какой площадке запущена игра. Сервер разработки (npm run dev) — всегда без площадки.
+ * В сборке для ВК — VK Bridge (loadVk). В обычной — SDK Яндекса по документации: скрипт /sdk.js (относительный путь —
+ * для игр, загруженных в консоль Яндекса), затем YaGames.init(). Скрипта нет или он не ответил — игра идёт без
+ * площадки, но идёт.
  */
 export async function loadPlatform(): Promise<Platform> {
   if (import.meta.hot) return new LocalPlatform()
+  if (TARGET === 'vk') return loadVk()
   try {
     await loadScript('/sdk.js')
     const ysdk = await timeout(YaGames.init())
@@ -23,6 +27,27 @@ export async function loadPlatform(): Promise<Platform> {
   } catch {
     return new LocalPlatform()
   }
+}
+
+/**
+ * ВКонтакте и Одноклассники. VKWebAppInit — первым делом, до загрузки картинок: ВК ждёт его не дольше 30 секунд,
+ * а до него показывает свой экран запуска. Сборку открыли не во ВК (просто по адресу хостинга) — играем без площадки.
+ */
+async function loadVk(): Promise<Platform> {
+  const { default: bridge } = await import('@vkontakte/vk-bridge')
+  if (!bridge.isEmbedded()) return new LocalPlatform()
+  await timeout(bridge.send('VKWebAppInit')).catch(() => {})
+  const { VkPlatform } = await import('./vk.ts')
+  // У VK Bridge строгие типы на каждое событие — площадке хватает простого «отправить» и «подписаться»
+  const api: VkBridge = {
+    send: (method, props) => bridge.send(method as never, props as never),
+    subscribe: (listener) => bridge.subscribe(listener as never),
+  }
+  const launchTime = Number(new URLSearchParams(window.location.search).get('vk_ts'))
+  return new VkPlatform(api, {
+    launchTime: Number.isFinite(launchTime) && launchTime > 0 ? launchTime : null,
+    supportUrl: import.meta.env.VITE_SUPPORT_URL || null,
+  })
 }
 
 function loadScript(src: string): Promise<void> {
