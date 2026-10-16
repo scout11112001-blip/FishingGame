@@ -48,10 +48,13 @@ async function loadVk(): Promise<Platform> {
   } else if (import.meta.env.DEV) {
     api = (await import('./vkMock.ts')).mockVkBridge()
   } else return new LocalPlatform()
-  const launchTime = Number(new URLSearchParams(window.location.search).get('vk_ts'))
+  const params = new URLSearchParams(window.location.search)
+  const launchTime = Number(params.get('vk_ts'))
   return new VkPlatform(api, {
     launchTime: Number.isFinite(launchTime) && launchTime > 0 ? launchTime : null,
     supportUrl: import.meta.env.VITE_SUPPORT_URL || null,
+    // Та же игра в Одноклассниках: там vk_client=ok (https://dev.vk.ru/ru/ok/development/launch-parameters)
+    ok: params.get('vk_client') === 'ok',
   })
 }
 

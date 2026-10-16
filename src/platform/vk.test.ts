@@ -234,3 +234,36 @@ describe('ВКонтакте: облачное сохранение', () => {
     expect(Date.now() - started).toBeLessThan(6000)
   }, 10_000)
 })
+
+describe('Одноклассники (та же игра, vk_client=ok)', () => {
+  /** localStorage в памяти: у ВК и ОК адрес игры один — и браузерное хранилище общее. */
+  function memoryStorage(): Storage {
+    const items = new Map<string, string>()
+    return {
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+      removeItem: (k: string) => void items.delete(k),
+    } as unknown as Storage
+  }
+
+  it('ссылки на сообщество ВК нет: Одноклассники запрещают уводить из Одноклассников', () => {
+    const { bridge } = fakeBridge()
+    const support = 'https://vk.com/nasha.rybalka'
+    expect(new VkPlatform(bridge, { launchTime: null, supportUrl: support, ok: true }).supportUrl).toBeNull()
+    expect(new VkPlatform(bridge, { launchTime: null, supportUrl: support }).supportUrl).toBe(support)
+  })
+
+  it('прогресс свой: копии ВК не видно ни в облаке, ни в браузере, и наоборот; ключ ВК прежний', async () => {
+    const { bridge, storage: cloud } = fakeBridge()
+    const local = memoryStorage()
+    const vk = new VkPlatform(bridge, { launchTime: null, supportUrl: null, storage: () => local })
+    const ok = new VkPlatform(bridge, { launchTime: null, supportUrl: null, ok: true, storage: () => local })
+    await vk.saveStore('fishing:rivers').save('{"savedAt":1,"from":"vk"}', true)
+    expect(Object.keys(cloud)).toEqual(['fishing_rivers_save'])
+    expect(await ok.saveStore('fishing:rivers').load()).toBeNull()
+    await ok.saveStore('fishing:rivers').save('{"savedAt":2,"from":"ok"}', true)
+    expect(Object.keys(cloud).sort()).toEqual(['fishing_rivers_ok_save', 'fishing_rivers_save'])
+    expect(await vk.saveStore('fishing:rivers').load()).toBe('{"savedAt":1,"from":"vk"}')
+    expect(await ok.saveStore('fishing:rivers').load()).toBe('{"savedAt":2,"from":"ok"}')
+  })
+})

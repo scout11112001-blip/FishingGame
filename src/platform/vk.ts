@@ -73,6 +73,8 @@ export interface VkPlatformOptions {
   /** Время запуска от ВК (параметр vk_ts), секунды; нет — часы устройства. */
   launchTime: number | null
   supportUrl: string | null
+  /** Игра открыта в Одноклассниках (параметр запуска vk_client=ok), а не во ВКонтакте. */
+  ok?: boolean
   /** Часы, мс. Подменяются в тестах. */
   clock?: () => number
   /** Монотонные часы для интервала рекламы, мс: перевод часов устройства на него не влияет. Подменяются в тестах. */
@@ -86,6 +88,7 @@ export class VkPlatform implements Platform {
   readonly rewardedAds = true
   readonly supportUrl: string | null
   private readonly bridge: VkBridge
+  private readonly ok: boolean
   private readonly clock: () => number
   private readonly timer: () => number
   private readonly storage: () => Storage
@@ -101,7 +104,9 @@ export class VkPlatform implements Platform {
 
   constructor(bridge: VkBridge, options: VkPlatformOptions) {
     this.bridge = bridge
-    this.supportUrl = options.supportUrl
+    this.ok = options.ok ?? false
+    // Одноклассники запрещают ссылки, уводящие из Одноклассников, в том числе во ВКонтакте — а сообщество у нас во ВК
+    this.supportUrl = this.ok ? null : options.supportUrl
     this.clock = options.clock ?? Date.now
     this.timer = options.timer ?? (() => performance.now())
     this.lastAdAt = this.timer()
@@ -152,9 +157,12 @@ export class VkPlatform implements Platform {
   /**
    * Прогресс — в браузере и в хранилище ВК, при загрузке — более свежая копия. На хостинге ВК адрес игры меняется
    * с каждой выкладкой, и localStorage прошлой версии пропадает: настоящая копия — облачная.
+   * В Одноклассниках — свой прогресс (требование Одноклассников): отдельный ключ и в браузере, и в облаке —
+   * адрес игры у ВК и ОК один, и браузерные копии иначе смешались бы. Ключ ВКонтакте прежний.
    */
   saveStore(key: string): SaveStore {
-    return new MirrorStore(new LocalStore(key, this.storage), new CloudStore(new VkCloud(this.bridge, key)))
+    const own = this.ok ? `${key}:ok` : key
+    return new MirrorStore(new LocalStore(own, this.storage), new CloudStore(new VkCloud(this.bridge, own)))
   }
 
   /**
