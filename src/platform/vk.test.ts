@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CloudStore, CLOUD_KEY } from '../save/store.ts'
-import { VK_VALUE_MAX, VkCloud, vkKey, VkPlatform, type VkBridge } from './vk.ts'
+import { FULLSCREEN_AD_INTERVAL_MS, VK_VALUE_MAX, VkCloud, vkKey, VkPlatform, type VkBridge } from './vk.ts'
 
 type Call = { method: string; props?: Record<string, unknown> }
 
@@ -30,10 +30,15 @@ function fakeBridge(answer: (call: Call) => Promise<unknown> = async () => ({ re
   return { bridge, calls, storage, emit }
 }
 
+/** time — часы устройства, adTime — монотонные часы интервала рекламы. */
 function platform(bridge: VkBridge, launchTime: number | null = null, now = 1_000_000) {
   const time = { t: now }
-  return Object.assign(new VkPlatform(bridge, { launchTime, supportUrl: 'https://vk.com/nasha.rybalka', clock: () => time.t }), { time })
+  const adTime = { t: 0 }
+  const options = { launchTime, supportUrl: 'https://vk.com/nasha.rybalka', clock: () => time.t, timer: () => adTime.t }
+  return Object.assign(new VkPlatform(bridge, options), { time, adTime })
 }
+
+const shows = (calls: Call[]) => calls.filter((c) => c.method === 'VKWebAppShowNativeAds').map((c) => c.props?.ad_format)
 
 describe('ВКонтакте: площадка', () => {
   it('без звука, со ссылкой на поддержку, с рекламой за награду', () => {
@@ -73,10 +78,15 @@ describe('ВКонтакте: площадка', () => {
   it('реклама за награду — формат reward; заранее и после каждого показа ВК просят подгрузить следующую', async () => {
     const { bridge, calls } = fakeBridge()
     const p = platform(bridge)
-    expect(calls).toEqual([{ method: 'VKWebAppCheckNativeAds', props: { ad_format: 'reward' } }])
+    expect(calls).toEqual([
+      { method: 'VKWebAppCheckNativeAds', props: { ad_format: 'reward' } },
+      { method: 'VKWebAppCheckNativeAds', props: { ad_format: 'interstitial' } },
+    ])
     await p.showRewardedAd()
-    expect(calls.map((c) => c.method)).toEqual(['VKWebAppCheckNativeAds', 'VKWebAppShowNativeAds', 'VKWebAppCheckNativeAds'])
-    expect(calls[1].props).toEqual({ ad_format: 'reward' })
+    expect(calls.slice(2)).toEqual([
+      { method: 'VKWebAppShowNativeAds', props: { ad_format: 'reward' } },
+      { method: 'VKWebAppCheckNativeAds', props: { ad_format: 'reward' } },
+    ])
   })
 
   it('пока идёт реклама, игра на паузе; вторая не запрашивается поверх первой', async () => {
@@ -115,11 +125,71 @@ describe('ВКонтакте: площадка', () => {
     expect(pauses).toEqual([true, false, true, false])
   })
 
-  it('межстраничной рекламы нет: ВК разрешает её только во время загрузки', async () => {
+  it('межстраничная — не раньше 4 минут от запуска и не чаще раза в 4 минуты; после показа подгружается следующая', async () => {
+    expect(FULLSCREEN_AD_INTERVAL_MS).toBe(4 * 60 * 1000)
     const { bridge, calls } = fakeBridge()
     const p = platform(bridge)
     await p.showFullscreenAd()
-    expect(calls.some((c) => c.method === 'VKWebAppShowNativeAds')).toBe(false)
+    p.adTime.t = FULLSCREEN_AD_INTERVAL_MS - 1
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual([])
+    p.adTime.t = FULLSCREEN_AD_INTERVAL_MS
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['interstitial'])
+    expect(calls.at(-1)).toEqual({ method: 'VKWebAppCheckNativeAds', props: { ad_format: 'interstitial' } })
+    p.adTime.t += FULLSCREEN_AD_INTERVAL_MS - 1
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['interstitial'])
+    p.adTime.t += 1
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['interstitial', 'interstitial'])
+  })
+
+  it('таймер общий: показанная реклама за награду сдвигает межстраничную', async () => {
+    const { bridge, calls } = fakeBridge()
+    const p = platform(bridge)
+    p.adTime.t = FULLSCREEN_AD_INTERVAL_MS * 3
+    expect(await p.showRewardedAd()).toBe(true)
+    p.adTime.t += FULLSCREEN_AD_INTERVAL_MS - 1
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['reward'])
+    p.adTime.t += 1
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['reward', 'interstitial'])
+  })
+
+  it('не показанная реклама («нет рекламы», отказ) таймер не сбрасывает: попробуем в следующий раз', async () => {
+    let next: () => Promise<unknown> = () => Promise.reject({ error_data: { error_code: 20 } })
+    const { bridge, calls } = fakeBridge(() => next())
+    const p = platform(bridge)
+    p.adTime.t = FULLSCREEN_AD_INTERVAL_MS
+    await p.showFullscreenAd()
+    expect(await p.showRewardedAd()).toBe(false)
+    next = async () => ({ result: true })
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['interstitial', 'reward', 'interstitial'])
+  })
+
+  it('межстраничная не лезет поверх рекламы за награду; пока идёт, игра на паузе', async () => {
+    let finish!: (v: unknown) => void
+    const { bridge, calls } = fakeBridge(() => new Promise((r) => (finish = r)))
+    const p = platform(bridge)
+    const pauses: boolean[] = []
+    p.onPause((paused) => pauses.push(paused))
+    p.adTime.t = FULLSCREEN_AD_INTERVAL_MS
+    const rewarded = p.showRewardedAd()
+    await p.showFullscreenAd()
+    expect(shows(calls)).toEqual(['reward'])
+    finish({ result: true })
+    await rewarded
+    p.adTime.t += FULLSCREEN_AD_INTERVAL_MS
+    const interstitial = p.showFullscreenAd()
+    expect(pauses).toEqual([true, false, true])
+    expect(await p.showRewardedAd()).toBe(false)
+    finish({ result: true })
+    await interstitial
+    expect(pauses).toEqual([true, false, true, false])
+    expect(shows(calls)).toEqual(['reward', 'interstitial'])
   })
 })
 

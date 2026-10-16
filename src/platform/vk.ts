@@ -19,6 +19,14 @@ export interface VkBridge {
 export const VK_VALUE_MAX = 2236
 /** Сколько ждать ответа хранилища при запуске: дольше — играем с копией из браузера. */
 const LOAD_TIMEOUT_MS = 4000
+/**
+ * Межстраничная реклама — не чаще раза в 4 минуты (ВК требует не чаще раза в 30 секунд, п. 5.1.5.2). Таймер один
+ * на все показы: отсчёт от запуска (при запуске реклама запрещена) и от последней рекламы любого вида — посмотрел
+ * рекламу за награду, межстраничную пока не покажем.
+ */
+export const FULLSCREEN_AD_INTERVAL_MS = 4 * 60 * 1000
+
+type AdFormat = 'reward' | 'interstitial'
 
 /**
  * Облачное сохранение ВК (VKWebAppStorageSet/Get): значения привязаны к игроку, а не к устройству — прогресс
@@ -67,6 +75,8 @@ export interface VkPlatformOptions {
   supportUrl: string | null
   /** Часы, мс. Подменяются в тестах. */
   clock?: () => number
+  /** Монотонные часы для интервала рекламы, мс: перевод часов устройства на него не влияет. Подменяются в тестах. */
+  timer?: () => number
   storage?: () => Storage
 }
 
@@ -77,7 +87,10 @@ export class VkPlatform implements Platform {
   readonly supportUrl: string | null
   private readonly bridge: VkBridge
   private readonly clock: () => number
+  private readonly timer: () => number
   private readonly storage: () => Storage
+  /** Когда последний раз показали рекламу (любую); в начале — время запуска. По часам timer. */
+  private lastAdAt: number
   /** Насколько время ВК при запуске расходится с часами устройства: прибавляем к ним — получаем время ВК. */
   private readonly offset: number
   private readonly pauseListeners: ((paused: boolean) => void)[] = []
@@ -90,6 +103,8 @@ export class VkPlatform implements Platform {
     this.bridge = bridge
     this.supportUrl = options.supportUrl
     this.clock = options.clock ?? Date.now
+    this.timer = options.timer ?? (() => performance.now())
+    this.lastAdAt = this.timer()
     this.storage = options.storage ?? (() => window.localStorage)
     this.offset = options.launchTime ? options.launchTime * 1000 - this.clock() : 0
     bridge.subscribe((event) => {
@@ -97,7 +112,8 @@ export class VkPlatform implements Platform {
       if (type === 'VKWebAppViewHide') this.setHidden(true)
       else if (type === 'VKWebAppViewRestore') this.setHidden(false)
     })
-    this.preloadRewarded()
+    this.preload('reward')
+    this.preload('interstitial')
   }
 
   /** VKWebAppInit уже отправлен при запуске (loadPlatform) — до загрузки картинок, как требует ВК. */
@@ -111,31 +127,22 @@ export class VkPlatform implements Platform {
   }
 
   /**
-   * Межстраничную рекламу ВК разрешает только во время явной загрузки — следующего уровня или локации (п. 5.1.5.1).
-   * Закрытие экрана улова — не загрузка, поэтому здесь её нет; доход во ВК — от рекламы за награду.
+   * Межстраничная реклама. ВК разрешает её во время загрузки следующего уровня или локации (п. 5.1.5.1): уровень у нас —
+   * каждый бой, локация — водоём и главное меню; где именно её зовут — решает сцена. Не чаще FULLSCREEN_AD_INTERVAL_MS.
+   * Нет рекламы — интервал не сбрасывается: попробуем в следующий раз.
    */
-  async showFullscreenAd(): Promise<void> {}
+  async showFullscreenAd(): Promise<void> {
+    if (this.adShowing || this.timer() - this.lastAdAt < FULLSCREEN_AD_INTERVAL_MS) return
+    await this.showAd('interstitial')
+  }
 
   /**
    * Реклама за награду: true — ВК сообщил, что показал её. Только по нажатию игрока на кнопку с названной наградой
-   * (п. 5.1.5.1), одна за раз. Пока она идёт, игра стоит. После показа ВК сам подгружает следующую — дёргаем
-   * VKWebAppCheckNativeAds ещё раз на случай, если первая подгрузка не удалась.
+   * (п. 5.1.5.1), одна за раз. Интервала у неё нет, но показанная сбрасывает интервал межстраничной.
    */
   async showRewardedAd(): Promise<boolean> {
     if (this.adShowing) return false
-    this.adShowing = true
-    this.syncPause()
-    try {
-      const result = (await this.bridge.send('VKWebAppShowNativeAds', { ad_format: 'reward' })) as { result?: boolean } | undefined
-      return result?.result === true
-    } catch {
-      // Нет рекламы (ошибка 20), нет сети, отказ клиента — награды нет
-      return false
-    } finally {
-      this.adShowing = false
-      this.syncPause()
-      this.preloadRewarded()
-    }
+    return this.showAd('reward')
   }
 
   now(): number {
@@ -150,9 +157,31 @@ export class VkPlatform implements Platform {
     return new MirrorStore(new LocalStore(key, this.storage), new CloudStore(new VkCloud(this.bridge, key)))
   }
 
-  /** Подгрузить рекламу за награду заранее: без этого показ начинается с задержкой (так советует документация ВК). */
-  private preloadRewarded() {
-    this.bridge.send('VKWebAppCheckNativeAds', { ad_format: 'reward' }).catch(() => {})
+  /**
+   * Показ рекламы: пока она идёт, игра стоит. После показа ВК сам подгружает следующую — дёргаем
+   * VKWebAppCheckNativeAds ещё раз на случай, если первая подгрузка не удалась.
+   */
+  private async showAd(format: AdFormat): Promise<boolean> {
+    this.adShowing = true
+    this.syncPause()
+    try {
+      const result = (await this.bridge.send('VKWebAppShowNativeAds', { ad_format: format })) as { result?: boolean } | undefined
+      const shown = result?.result === true
+      if (shown) this.lastAdAt = this.timer()
+      return shown
+    } catch {
+      // Нет рекламы (ошибка 20), нет сети, отказ клиента — не показали
+      return false
+    } finally {
+      this.adShowing = false
+      this.syncPause()
+      this.preload(format)
+    }
+  }
+
+  /** Подгрузить рекламу заранее: без этого показ начинается с задержкой (так советует документация ВК). */
+  private preload(format: AdFormat) {
+    this.bridge.send('VKWebAppCheckNativeAds', { ad_format: format }).catch(() => {})
   }
 
   private setHidden(hidden: boolean) {

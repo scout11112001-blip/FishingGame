@@ -232,6 +232,7 @@ export class FishingScene extends Phaser.Scene {
       this.player.water,
       () => this.player.xp,
       (water) => {
+        if (water.id !== this.player.water.id) this.adBreak()
         this.player.water = water
         this.equip()
       },
@@ -267,7 +268,11 @@ export class FishingScene extends Phaser.Scene {
       ],
       // Канал связи с поддержкой — требование ВК; на Яндексе внешние ссылки запрещены, там её нет
       support: supportUrl ? { label: t.menu.support, onClick: () => window.open(supportUrl, '_blank', 'noopener') } : undefined,
-      onPlay: () => (this.menuClosedAt = performance.now()),
+      onPlay: () => {
+        // Первый выход из меню за запуск — начало игры, рекламы нет; дальше — каждый раз
+        if (this.menuClosedAt > -Infinity) this.adBreak()
+        this.menuClosedAt = performance.now()
+      },
     })
     this.menuButton = this.hud.addTopButton('☰', t.menu.button, () => this.requestMenu())
     this.exitDialog = new ConfirmDialog(t.menu.exit, () => this.leaveToMenu())
@@ -420,16 +425,26 @@ export class FishingScene extends Phaser.Scene {
   }
 
   /**
-   * Уйти в меню: заброс брошен без итога (abort), экран итога закрыт. Межстраничной рекламы тут нет — это не конец
-   * заброса. Пока окно «Выйти?» было открыто, рыба могла попасться — тогда она уже засчитана, второй раз нет.
+   * Уйти в меню: заброс брошен без итога (abort), экран итога закрыт, на входе в меню — межстраничная реклама.
+   * Пока окно «Выйти?» было открыто, рыба могла попасться — тогда она уже засчитана, второй раз нет.
    */
   private leaveToMenu() {
     if (menuAccess(this.session.phase, !!this.tutorial) === 'none') return
-    // Итог — до abort: по нему сцена показала бы рекламу на переходе в покой
+    // Итог — до abort: по нему сцена позвала бы рекламу ещё и на переходе в покой
     this.result = null
     this.notice = null
     this.session.abort()
     this.openMenu()
+    this.adBreak()
+  }
+
+  /**
+   * Межстраничная реклама на переходе: закрыли экран «Поймал!», сменили водоём, вошли в главное меню или вышли из него
+   * (кроме первого выхода за запуск). Интервал между показами (один на все) держит площадка. В обучении — нет:
+   * новичок должен спокойно поймать первую рыбу.
+   */
+  private adBreak() {
+    if (!this.tutorial) void this.platform.showFullscreenAd()
   }
 
   /** Главное меню поверх игры: при запуске и по кнопке в углу. */
@@ -685,9 +700,9 @@ export class FishingScene extends Phaser.Scene {
         this.notice = e.clamped ? { text: this.texts.cast.tooFar, age: 0, at: null } : null
         break
       case 'phase':
-        // Закрыл экран итога — логическая пауза: тут может быть межстраничная реклама (не чаще раза в 5 минут).
-        // В обучении — нет: новичок должен спокойно поймать первую рыбу
-        if (e.phase === 'idle' && this.result && !this.tutorial) void this.platform.showFullscreenAd()
+        // Закрыл экран «Поймал!» — бой окончен, следующий — новый уровень: тут может быть межстраничная реклама.
+        // После схода — нет: и так обидно
+        if (e.phase === 'idle' && this.result?.kind === 'caught') this.adBreak()
         if (e.phase === 'idle') this.result = null
         // Поплавок долетел и шлёпнулся в воду
         if (e.phase === 'waiting') this.playSound(SPLASH_KEY, SPLASH_VOLUME)

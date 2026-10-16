@@ -2,7 +2,7 @@ import type { VkBridge } from './vk.ts'
 
 /**
  * Имитация VK Bridge для npm run dev:vk: ВК-версию игры (без звука, со ссылкой на поддержку, с облаком ВК) можно
- * гонять в обычном браузере. Хранилище ВК — в localStorage, реклама за награду «показывается» секунду и засчитывается.
+ * гонять в обычном браузере. Хранилище ВК — в localStorage, реклама «показывается» секунду и засчитывается.
  * Только для сервера разработки: в сборку не попадает.
  */
 export function mockVkBridge(): VkBridge {
@@ -19,7 +19,7 @@ export function mockVkBridge(): VkBridge {
           return { result: true }
         }
         case 'VKWebAppShowNativeAds':
-          console.info('[vk-mock] реклама за награду — секунда «показа»')
+          console.info(`[vk-mock] реклама ${props.ad_format === 'reward' ? 'за награду' : 'межстраничная'} — секунда «показа»`)
           await new Promise((r) => setTimeout(r, 1000))
           return { result: true }
         default:
