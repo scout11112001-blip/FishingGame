@@ -1049,7 +1049,8 @@ export class FishingScene extends Phaser.Scene {
   /** Пойманная рыба на экране улова: крупнее вес — длиннее рыба, но в пределах экрана. */
   private drawCaughtFish(fish: HookedFish, w: number, h: number) {
     const key = fishKey(fish.species.id)
-    const len = w * Phaser.Math.Clamp(0.18 + 0.17 * Math.cbrt(fish.weightKg), 0.25, 0.85)
+    // Крупнее рыба — длиннее картинка, но и плотва на 100 г — в полэкрана: мельче её на телефоне не разглядеть
+    const len = w * Phaser.Math.Clamp(0.45 + 0.12 * Math.cbrt(fish.weightKg), 0.5, 0.85)
     if (!this.textures.exists(key)) {
       const g = this.gfx
       g.fillStyle(COLOR.fish).fillEllipse(w / 2, h * 0.45, len, len * 0.4)
