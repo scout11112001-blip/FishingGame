@@ -4,6 +4,8 @@
 
 **ID игры:** 54825742 — vk.com/app54825742, в Одноклассниках ok.ru/game/vk_app54825742 (там же — в vk-hosting-config.json)
 
+**Панель игры:** dev.vk.ru/ru/admin/app-settings/54825742/platform (раздел «Размещение»). **Кабинет выплат:** cashout.vk.ru/#/create-cabinet/status (статус заявки ИП).
+
 ## Информация
 
 **Название** (3–29 символов, 28):
